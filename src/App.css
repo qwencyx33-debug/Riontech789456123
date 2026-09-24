@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@layer utilities {
+  
+  .hexagon-path {
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  }
+
+ 
+  .fade-active {
+    animation: fadeScale 1.2s ease-in-out;
+  }
+
+  @keyframes fadeScale {
+    0% { opacity: 0.6; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+}
+
+.bg-rion-dark { background-color: #050C1A; }
+.bg-rion-navy { background-color: #0A192F; }
