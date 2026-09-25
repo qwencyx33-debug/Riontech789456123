@@ -10,12 +10,15 @@ import {
   Truck,
   Users,
   X,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
 import DispatchingView from './DispatchingView';
 import QCVerificationView from './QCVerificationView';
 import TechnicianManagementView from './TechnicianManagementView';
+import './managerTheme.css';
 
 const colors = {
   blue: '#3B82F6',
@@ -240,6 +243,10 @@ const AppointmentReviewModal = ({ appointment, review, loading, onClose, onDispa
 };
 
 const ManagerDashboard = ({ onLogout }) => {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('riontech-manager-theme') === 'light' ? 'light' : 'dark'; }
+    catch { return 'dark'; }
+  });
   const [activeView, setActiveView] = useState('Dashboard');
   const [mobileNav, setMobileNav] = useState(false);
   const [appointments, setAppointments] = useState([]);
@@ -248,6 +255,13 @@ const ManagerDashboard = ({ onLogout }) => {
   const [reviewAppointment, setReviewAppointment] = useState(null);
   const [review, setReview] = useState({ projectDetails: null, serviceAreas: [], requestedItems: [], errors: {} });
   const [reviewLoading, setReviewLoading] = useState(false);
+
+  const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark');
+
+  useEffect(() => {
+    try { localStorage.setItem('riontech-manager-theme', theme); }
+    catch (error) { console.warn('Unable to save manager theme preference.', error); }
+  }, [theme]);
 
   const loadDashboardData = async () => {
     setLoading(true);
@@ -304,12 +318,18 @@ const ManagerDashboard = ({ onLogout }) => {
   const attentionCount = metrics.cashierApprovals.length + metrics.readyForDispatch.length + metrics.qualityReview.length;
 
   return (
-    <div className="min-h-screen bg-[#030E10] font-sans text-slate-100">
+    <div className={`manager-theme manager-${theme} min-h-screen bg-[#030E10] font-sans text-slate-100`}>
       <AnimatePresence>{mobileNav && <motion.button type="button" aria-label="Close navigation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileNav(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden" />}</AnimatePresence>
       <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/[0.06] bg-[#031418] transition-transform md:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-6"><span className="rounded-lg bg-[#EAB308] p-2 text-[#031418]"><ShieldCheck size={17} /></span><div><p className="text-sm font-bold text-white">Riontech</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Manager portal</p></div></div>
         <nav className="flex-1 space-y-1 p-3">{menuItems.map(([id, label, Icon]) => <button type="button" key={id} onClick={() => { setActiveView(id); setMobileNav(false); }} className="flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-sm font-semibold" style={activeView === id ? { color: colors.gold, background: `${colors.gold}12` } : { color: '#94A3B8' }}><Icon size={17} />{label}</button>)}</nav>
-        <button type="button" onClick={onLogout} className="m-3 flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-red-500/10 hover:text-red-400"><LogOut size={17} />Logout</button>
+        <div className="m-3 space-y-1">
+          <button type="button" onClick={toggleTheme} className="manager-theme-toggle flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-semibold text-slate-400 hover:bg-white/5">
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+            Switch to {theme === 'dark' ? 'light' : 'dark'} mode
+          </button>
+          <button type="button" onClick={onLogout} className="flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-semibold text-slate-500 hover:bg-red-500/10 hover:text-red-400"><LogOut size={17} />Logout</button>
+        </div>
       </aside>
       <main className="min-h-screen md:ml-64">
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-white/[0.06] bg-[#020617]/90 px-5 backdrop-blur-xl md:px-7"><div className="flex items-center gap-3"><button type="button" onClick={() => setMobileNav(true)} className="rounded-lg p-2 text-slate-400 md:hidden"><Menu size={20} /></button><div><p className="text-sm font-bold text-white">{greeting}, Manager</p><p className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">{today}<span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Real-time operational updates</p></div></div><button type="button" onClick={() => setActiveView('Dashboard')} className="relative rounded-lg p-2 text-slate-400 hover:bg-white/5 hover:text-white"><Bell size={18} />{attentionCount > 0 && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[#EAB308]" />}</button></header>

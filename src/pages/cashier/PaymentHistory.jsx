@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
+import './cashierTheme.css';
 import { 
   Banknote, Calendar, CheckCircle2, ChevronLeft, ChevronRight, 
   FileText, MapPin, Receipt, Search, Smartphone, Building2, X 
@@ -261,7 +262,7 @@ function Modal({ t, onClose }) {
   );
 }
 
-export default function PaymentHistory() {
+export default function PaymentHistory({ theme = 'dark' }) {
   const [rows, setRows] = useState([]);
   const [term, setTerm] = useState('');
   const [method, setMethod] = useState('all');
@@ -309,7 +310,7 @@ export default function PaymentHistory() {
   }, [rows, term, method, range]);
 
   return (
-    <div className="page">
+    <div className={`page cashier-${theme}`}>
       <style>{css}</style>
       <header>
         <div>

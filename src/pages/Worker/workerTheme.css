@@ -1,0 +1,53 @@
+.worker-light {
+  background: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.worker-light > .fixed.inset-0 { display: none; }
+.worker-light main,
+.worker-light [class*="min-h-screen"] {
+  background-color: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.worker-light aside,
+.worker-light .worker-mobile-nav {
+  background-color: #e5e9ee !important;
+  border-color: #cbd2da !important;
+}
+
+.worker-light [class*="bg-[#"]:not([class*="EAB308"]):not([class*="FFC107"]) {
+  background-color: #eef1f4 !important;
+}
+
+.worker-light [class*="bg-white/"] { background-color: #e2e7ec !important; }
+.worker-light [class*="bg-black/"] { background-color: rgba(15, 23, 42, .65) !important; }
+
+.worker-light [class*="from-[#"]:not([class*="EAB308"]):not([class*="FFC107"]),
+.worker-light [class*="via-[#"]:not([class*="EAB308"]):not([class*="FFC107"]),
+.worker-light [class*="to-[#"]:not([class*="EAB308"]):not([class*="FFC107"]) {
+  background-color: #eef1f4 !important;
+  background-image: none !important;
+}
+
+.worker-light [class*="text-white"],
+.worker-light [class*="text-slate-100"],
+.worker-light [class*="text-slate-200"] { color: #172033 !important; }
+.worker-light [class*="text-slate-300"] { color: #334155 !important; }
+.worker-light [class*="text-slate-400"] { color: #526174 !important; }
+.worker-light [class*="text-slate-500"],
+.worker-light [class*="text-slate-600"] { color: #64748b !important; }
+.worker-light [class*="border-white/"] { border-color: #cbd2da !important; }
+.worker-light [style*="#030E10"],
+.worker-light [style*="#070b14"],
+.worker-light [style*="#070B14"],
+.worker-light [style*="#04060c"] { background: #eef1f4 !important; }
+.worker-light input,
+.worker-light textarea,
+.worker-light select { color: #172033 !important; }
+.worker-light input::placeholder,
+.worker-light textarea::placeholder { color: #64748b !important; }
+.worker-light .worker-theme-toggle { color: #526174 !important; }
+.worker-light .worker-theme-toggle:hover { background: #dce2e8 !important; }
+.worker-light [class*="z-50"] [class*="text-white"] { color: #fff !important; }
+.worker-light .leaflet-container { background: #e6e9ed !important; }

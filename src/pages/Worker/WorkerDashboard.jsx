@@ -4,7 +4,7 @@ import {
   ChevronRight, Clock, CheckCircle2, Circle, AlertTriangle, Zap,
   Star, Wifi, FileText, Map, Menu, X, ClipboardCheck,
   MessageSquare, ShieldCheck, PlayCircle, Camera, ListChecks,
-  Phone, User, Wrench, History, TrendingUp, Navigation, Sparkles, Package, ImagePlus
+  Phone, User, Wrench, History, TrendingUp, Navigation, Sparkles, Package, ImagePlus, Sun, Moon
 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
 import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
@@ -12,6 +12,7 @@ import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motio
 import DeploymentsView from './DeploymentsView';
 import ServiceLogsView from './ServiceLogsView';
 import NetworkMap from './NetworkMap';
+import './workerTheme.css';
 
 function useCountUp(target, duration = 800) {
   const [value, setValue] = useState(0);
@@ -1052,7 +1053,7 @@ const NAV_ITEMS = [
   { key: 'logs', label: 'Service Logs', icon: FileText },
 ];
 
-function Sidebar({ active, setActive, onLogoutClick, collapsed, setCollapsed }) {
+function Sidebar({ active, setActive, onLogoutClick, collapsed, setCollapsed, theme, onToggleTheme }) {
   return (
     <motion.nav
       animate={{ width: collapsed ? 84 : 260 }}
@@ -1121,6 +1122,16 @@ function Sidebar({ active, setActive, onLogoutClick, collapsed, setCollapsed }) 
       </div>
 
       <button
+        onClick={onToggleTheme}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        className="worker-theme-toggle mb-1 w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 hover:bg-white/[0.05] hover:text-amber-300 transition-colors"
+      >
+        {theme === 'dark' ? <Sun size={18} className="shrink-0" /> : <Moon size={18} className="shrink-0" />}
+        <AnimatePresence>
+          {!collapsed && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</motion.span>}
+        </AnimatePresence>
+      </button>
+      <button
         onClick={onLogoutClick}
         className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 hover:text-amber-300 hover:bg-white/[0.05] transition-colors
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
@@ -1138,7 +1149,7 @@ function Sidebar({ active, setActive, onLogoutClick, collapsed, setCollapsed }) 
   );
 }
 
-function MobileNav({ active, setActive, onLogoutClick, open, setOpen }) {
+function MobileNav({ active, setActive, onLogoutClick, open, setOpen, theme, onToggleTheme }) {
   return (
     <AnimatePresence>
       {open && (
@@ -1155,7 +1166,7 @@ function MobileNav({ active, setActive, onLogoutClick, open, setOpen }) {
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
             transition={{ type: 'spring', stiffness: 300, damping: 32 }}
-            className="fixed left-0 top-0 bottom-0 w-72 bg-[#04060c] border-r border-white/[0.08] z-50 p-4 md:hidden"
+            className="worker-mobile-nav fixed left-0 top-0 bottom-0 w-72 bg-[#04060c] border-r border-white/[0.08] z-50 p-4 md:hidden"
           >
             <div className="flex items-center justify-between mb-8 px-2">
               <h2 className="text-white font-black italic text-lg">RION <span className="text-amber-300">TECH</span></h2>
@@ -1173,7 +1184,11 @@ function MobileNav({ active, setActive, onLogoutClick, open, setOpen }) {
                   <item.icon size={18} /> {item.label}
                 </button>
               ))}
-              <button onClick={onLogoutClick} className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 mt-6">
+              <button onClick={onToggleTheme} className="worker-theme-toggle w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 mt-6">
+                {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              </button>
+              <button onClick={onLogoutClick} className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-400 mt-1">
                 <LogOut size={18} /> Logout
               </button>
             </div>
@@ -1230,6 +1245,10 @@ function TopHeader({ technicianName, onMenuClick, onBellClick, unreadCount }) {
 }
 
 export default function TechnicianDashboard({ onLogout }) {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('riontech-worker-theme') === 'light' ? 'light' : 'dark'; }
+    catch { return 'dark'; }
+  });
   const [activeModule, setActiveModule] = useState('dashboard');
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1256,6 +1275,13 @@ export default function TechnicianDashboard({ onLogout }) {
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const toggleTheme = () => setTheme((current) => current === 'dark' ? 'light' : 'dark');
+
+  useEffect(() => {
+    try { localStorage.setItem('riontech-worker-theme', theme); }
+    catch (error) { console.warn('Unable to save worker theme preference.', error); }
+  }, [theme]);
 
   
   const fetchTasks = useCallback(async (techId) => {
@@ -1405,7 +1431,7 @@ export default function TechnicianDashboard({ onLogout }) {
       case 'assigned':
         return <DeploymentsView tasks={tasks} onRefresh={() => technicianId && fetchTasks(technicianId)} initialJobId={mapJobId} onInitialJobOpened={() => setMapJobId(null)} />;
       case 'network':
-        return <NetworkMap tasks={tasks.map((job) => ({ ...job, technician_name: technicianName }))} activeJob={activeJob} onViewJob={(job) => { setMapJobId(job.id); setActiveModule('assigned'); }} />;
+        return <NetworkMap tasks={tasks.map((job) => ({ ...job, technician_name: technicianName }))} activeJob={activeJob} onViewJob={(job) => { setMapJobId(job.id); setActiveModule('assigned'); }} theme={theme} />;
       case 'logs':
         return <ServiceLogsView />;
       default:
@@ -1418,7 +1444,7 @@ export default function TechnicianDashboard({ onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#030E10] text-slate-300 flex relative">
+    <div className={`worker-theme worker-${theme} min-h-screen bg-[#030E10] text-slate-300 flex relative`}>
       <AmbientBackground />
       <Sidebar
         active={activeModule}
@@ -1426,6 +1452,8 @@ export default function TechnicianDashboard({ onLogout }) {
         onLogoutClick={() => setLogoutModalOpen(true)}
         collapsed={sidebarCollapsed}
         setCollapsed={setSidebarCollapsed}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <MobileNav
         active={activeModule}
@@ -1433,6 +1461,8 @@ export default function TechnicianDashboard({ onLogout }) {
         onLogoutClick={() => setLogoutModalOpen(true)}
         open={mobileNavOpen}
         setOpen={setMobileNavOpen}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       <main className="relative z-10 flex-1 p-5 md:p-8 max-w-[1400px] mx-auto w-full">

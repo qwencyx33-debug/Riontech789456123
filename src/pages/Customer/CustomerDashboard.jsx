@@ -9,7 +9,7 @@ import {
   Image as ImageIcon, ChevronLeft, ChevronRight as ChevronRightIcon,
   LifeBuoy, HelpCircle, MessageCircle, PhoneCall, BookOpen,
   ClipboardList, Timer, Activity, ExternalLink, Sparkles,
-  Upload, Loader2,
+  Upload, Loader2, Sun, Moon,
 } from 'lucide-react';
 // eslint-disable-next-line no-unused-vars -- `motion.*` is used as a JSX namespace.
 import { motion, AnimatePresence } from 'framer-motion';
@@ -911,7 +911,7 @@ const RecentServiceHistory = ({ items, onOpen }) => {
   );
 };
 
-const MobileNav = ({ view, setView }) => (
+const MobileNav = ({ view, setView, theme, onToggleTheme }) => (
   <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#050a15]/97 backdrop-blur-3xl border-t border-white/[0.06] px-2 pb-safe">
     <div className="flex items-center justify-around py-1.5">
       {navItems.map(({ id, icon: Icon, label }) => {
@@ -934,6 +934,15 @@ const MobileNav = ({ view, setView }) => (
           </button>
         );
       })}
+      <button
+        type="button"
+        onClick={onToggleTheme}
+        aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+        className="flex flex-col items-center gap-1 py-2 px-3 rounded-2xl text-slate-600 hover:text-amber-600 transition-colors"
+      >
+        {theme === 'light' ? <Moon size={19} /> : <Sun size={19} />}
+        <span className="text-[8px] font-bold uppercase tracking-wider">{theme === 'light' ? 'Dark' : 'Light'}</span>
+      </button>
     </div>
   </nav>
 );
@@ -1188,6 +1197,11 @@ const CompletedExperience = ({ lastCompleted, technician, report, onViewReport, 
 
 const CustomerDashboard = ({ userEmail }) => {
   const [view, setView] = useState('dashboard');
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') return 'light';
+    try { return window.localStorage.getItem('riontech-customer-theme') === 'dark' ? 'dark' : 'light'; }
+    catch { return 'light'; }
+  });
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [myAppointments, setMyAppointments] = useState([]);
   const [technicians, setTechnicians] = useState({});       
@@ -1199,10 +1213,17 @@ const CustomerDashboard = ({ userEmail }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [finalPaymentAppointment, setFinalPaymentAppointment] = useState(null);
   const [profile, setProfile] = useState({
-    first_name: 'User', last_name: '', email: userEmail, phone: '', address: '', avatar_url: null,
+    first_name: '', last_name: '', email: userEmail, phone: '', address: '', avatar_url: null,
   });
 
   const [notice, setNotice] = useState(null); 
+
+  const toggleTheme = () => setTheme((current) => current === 'light' ? 'dark' : 'light');
+
+  useEffect(() => {
+    try { window.localStorage.setItem('riontech-customer-theme', theme); }
+    catch (error) { console.warn('Unable to save customer theme preference.', error); }
+  }, [theme]);
 
   
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -1212,11 +1233,14 @@ const CustomerDashboard = ({ userEmail }) => {
   const fetchUserData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: profileData } = await supabase
-        .from('profiles').select('*').eq('email', userEmail).single();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) { setMyAppointments([]); setLoading(false); return; }
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles').select('*').eq('id', user.id).maybeSingle();
+      if (profileError) throw profileError;
       if (profileData) setProfile(profileData);
 
-      const userId = profileData?.id;
+      const userId = user.id;
       if (!userId) { setMyAppointments([]); setLoading(false); return; }
 
       const { data: appts, error } = await supabase
@@ -1336,27 +1360,6 @@ const CustomerDashboard = ({ userEmail }) => {
     setTimeout(() => { window.location.href = '/'; }, 1000);
   };
 
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    try {
-      const { error } = await supabase.from('profiles').update({
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        phone: profile.phone,
-        address: profile.address,
-      }).eq('email', userEmail);
-      if (!error) {
-        setNotice({ title: 'Profile Updated', message: 'Your changes were saved successfully.', tone: 'success' });
-        setView('dashboard');
-      } else {
-        setNotice({ title: 'Update Failed', message: 'We could not save your changes. Please try again.', tone: 'error' });
-      }
-    } catch (err) {
-      console.error('Update error:', err);
-      setNotice({ title: 'Update Failed', message: 'Something went wrong. Please try again.', tone: 'error' });
-    }
-  };
-
   const handleHelpAction = (action) => {
     if (action === 'hotline') {
       window.location.href = 'tel:+1234567890';
@@ -1377,7 +1380,7 @@ const CustomerDashboard = ({ userEmail }) => {
 
   
   return (
-    <div className="flex min-h-screen bg-[#030E10] text-slate-200 font-sans selection:bg-amber-400/30">
+    <div className={`customer-${theme} flex min-h-screen font-sans selection:bg-amber-400/30`}>
 
       {}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -1393,18 +1396,6 @@ const CustomerDashboard = ({ userEmail }) => {
             <ShieldCheck size={18} className="text-[#140f02]" />
           </div>
           <span className="font-black tracking-tighter text-[1.25rem] text-white">RIONTECH</span>
-        </div>
-
-        <div className="px-5 py-4 border-b border-white/[0.05]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-amber-500 rounded-xl flex items-center justify-center text-[#140f02] font-black text-sm shadow-lg shadow-amber-500/20 overflow-hidden flex-shrink-0">
-              {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" /> : initials}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">{profile.first_name} {profile.last_name}</p>
-              <p className="text-[9px] text-slate-500 truncate font-mono">{userEmail}</p>
-            </div>
-          </div>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5">
@@ -1431,6 +1422,14 @@ const CustomerDashboard = ({ userEmail }) => {
         </nav>
 
         <div className="px-3 pb-5 border-t border-white/[0.05] pt-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[11px] font-semibold text-slate-500 hover:text-amber-600 hover:bg-amber-400/10 transition-all"
+          >
+            {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
+            Switch to {theme === 'light' ? 'dark' : 'light'} mode
+          </button>
           <button
             onClick={openLogoutModal}
             className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[11px] font-semibold text-slate-500 hover:text-red-400 hover:bg-red-500/8 transition-all border border-transparent hover:border-red-500/15"
@@ -1650,7 +1649,7 @@ const CustomerDashboard = ({ userEmail }) => {
             <ProfileSettings
               profile={profile}
               setProfile={setProfile}
-              onSave={handleUpdateProfile}
+              theme={theme}
               onBack={() => setView('dashboard')}
             />
           )}
@@ -1666,7 +1665,7 @@ const CustomerDashboard = ({ userEmail }) => {
         </AnimatePresence>
       </main>
 
-      <MobileNav view={view} setView={setView} />
+      <MobileNav view={view} setView={setView} theme={theme} onToggleTheme={toggleTheme} />
       <FloatingHelp onAction={handleHelpAction} />
 
       <NoticeModal
@@ -1698,6 +1697,26 @@ const CustomerDashboard = ({ userEmail }) => {
       )}
 
       <style>{`
+        .customer-light { --customer-page: #e6e9ed; --customer-surface: #eef1f4; --customer-text: #182230; --customer-navy: #e6e9ed; --customer-header: linear-gradient(135deg,#eef1f4 0%,#e4e8ed 100%); --customer-ring-track: rgba(15,23,42,.16); background: #e6e9ed !important; color: #1e293b !important; }
+        .customer-dark { --customer-page: #030e10; --customer-surface: #080e1c; --customer-text: #e2e8f0; --customer-navy: #071a3d; --customer-header: linear-gradient(135deg,#071a3d 0%,#0b2350 55%,#10285c 100%); --customer-ring-track: rgba(255,255,255,.08); background: #030e10 !important; color: #e2e8f0 !important; }
+        .customer-light > .fixed.inset-0 { display: none; }
+        .customer-light aside { background-color: #eef1f4 !important; border-color: #d1d8e0 !important; }
+        .customer-light [class*="bg-[#"] { background-color: #eef1f4 !important; }
+        .customer-light [class*="bg-white/"] { background-color: #e2e7ec !important; }
+        .customer-light [class*="bg-black/"] { background-color: rgba(15,23,42,.58) !important; }
+        .customer-light [class*="text-white"], .customer-light [class*="text-slate-200"] { color: #0f172a !important; }
+        .customer-light [class*="text-slate-300"] { color: #334155 !important; }
+        .customer-light [class*="text-slate-400"] { color: #475569 !important; }
+        .customer-light [class*="text-slate-500"] { color: #64748b !important; }
+        .customer-light [class*="text-slate-600"], .customer-light [class*="text-slate-700"] { color: #475569 !important; }
+        .customer-light [class*="border-white/"] { border-color: #e2e8f0 !important; }
+        .customer-light [class*="from-[#"], .customer-light [class*="via-[#"], .customer-light [class*="to-[#"] { background-color: #eef1f4 !important; background-image: none !important; }
+        .customer-light [class*="z-[100]"] [class*="text-white"], .customer-light [class*="z-[300]"] [class*="text-white"] { color: #fff !important; }
+        .customer-light [style*="#030E10"] { background: #e6e9ed !important; }
+        .customer-light input, .customer-light textarea, .customer-light select { color: #0f172a !important; }
+        .customer-light input::placeholder, .customer-light textarea::placeholder { color: #64748b !important; }
+        .customer-light .border-amber-400\/20, .customer-light .border-amber-400\/25 { border-color: #fcd34d !important; }
+        .customer-light .bg-amber-400\/10, .customer-light .bg-amber-400\/15 { background-color: #fef3c7 !important; }
         @keyframes shimmer {
           0% { background-position: -200% 0; }
           100% { background-position: 200% 0; }

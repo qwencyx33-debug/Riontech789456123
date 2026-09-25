@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { AnimatePresence, motion } from 'framer-motion';
 import Swal from 'sweetalert2';
 import { 
   Banknote, Building2, Calendar, CheckCircle2, ChevronLeft, ChevronRight, 
   Clock, History, LayoutDashboard, LogOut, MapPin,
-  Receipt, Search, ShieldCheck, Smartphone, Wallet, X
+  Receipt, Search, ShieldCheck, Smartphone, Wallet, X, Sun, Moon
 } from 'lucide-react';
+import './cashierTheme.css';
 
 const C = {
   bg: '#020617',
@@ -39,7 +40,7 @@ const Section = ({ title, children }) => (
   </section>
 );
 
-function Sidebar({ go, logout }) {
+function Sidebar({ go, logout, theme, onToggleTheme }) {
   return (
     <aside className="side">
       <div className="brand">
@@ -59,6 +60,10 @@ function Sidebar({ go, logout }) {
           {l}
         </button>
       ))}
+      <button className="theme-toggle" onClick={onToggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+        {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+        Switch to {theme === 'dark' ? 'light' : 'dark'} mode
+      </button>
       <button className="out" onClick={logout}>
         <LogOut size={16} />
         Logout
@@ -67,14 +72,14 @@ function Sidebar({ go, logout }) {
   );
 }
 
-function Card({ job, onReview }) {
+function Card({ job, onReview, fresh = false }) {
   let total = Number(job.price) || 0, down = Number(job.downpayment_paid) || 0;
   return (
     <motion.article 
       className="card" 
-      initial={{ opacity: 0, y: 8 }} 
-      animate={{ opacity: 1, y: 0 }} 
-      whileHover={{ y: -3 }}
+      initial={fresh ? { opacity: 0, y: 8, scale: .98 } : false}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      whileHover={{ y: -2 }}
     >
       <header>
         <i>{(job.full_name?.[0] || '?').toUpperCase()}</i>
@@ -91,7 +96,7 @@ function Card({ job, onReview }) {
       <div className="money">
         <span>Total <b>{peso(total)}</b></span>
         <span>Downpayment <b>{peso(down)}</b></span>
-        <strong>Balance <b>{peso(Math.max(0, total - down))}</b></strong>
+        <strong><span>Amount due</span><b>{peso(Math.max(0, total - down))}</b></strong>
       </div>
       <div className="badges">
         <em>{nice(job.status)}</em>
@@ -419,13 +424,19 @@ function Modal({ job, onClose, onDone }) {
   );
 }
 
-export default function PaymentProcess({ onNavigate = () => {}, onLogout = () => {} }) {
+export default function PaymentProcess({ onNavigate = () => {}, onLogout = () => {}, theme = 'dark', onToggleTheme = () => {} }) {
   const [jobs, setJobs] = useState([]);
   const [term, setTerm] = useState('');
   const [filter, setFilter] = useState('all');
   const [chosen, setChosen] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [freshIds, setFreshIds] = useState([]);
+  const knownIds = useRef(new Set());
+  const selectedId = useRef(null);
+  const toastTimer = useRef(null);
+  selectedId.current = chosen?.id ?? null;
 
-  const load = async () => {
+  const load = async (payload = null) => {
     const { data, error } = await supabase
       .from('appointments')
       .select('*')
@@ -437,31 +448,63 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
       setJobs([]);
       return;
     }
-    setJobs(data || []);
+    const rows = data || [];
+    const previous = knownIds.current;
+    const newlyAvailable = rows.filter(row => !previous.has(row.id));
+    const dateChangedId = payload?.eventType === 'UPDATE' && payload.old?.schedule_date !== payload.new?.schedule_date
+      ? payload.new?.id
+      : null;
+    const changedAppointment = dateChangedId ? rows.find(row => row.id === dateChangedId) : null;
+    const highlightedIds = [...newlyAvailable.map(row => row.id), ...(changedAppointment ? [changedAppointment.id] : [])];
+    if (previous.size && highlightedIds.length) {
+      setFreshIds(highlightedIds);
+      const eventId = payload?.new?.id || payload?.old?.id;
+      const announced = changedAppointment || newlyAvailable.find(row => row.id === eventId) || (payload?.eventType === 'INSERT' ? newlyAvailable[0] : null);
+      if (announced) {
+        setToast({ id: announced.id, kind: changedAppointment ? 'date' : 'new', customer: announced.full_name, service: announced.service_type });
+        clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setToast(null), 5000);
+      }
+    }
+    if (selectedId.current && !rows.some(row => row.id === selectedId.current)) {
+      // Keep the active form intact; the cashier can finish or close it deliberately.
+      setToast({ id: `selected-${selectedId.current}`, kind: 'selected', customer: 'Appointment updated', service: 'This appointment is no longer in the payment queue.' });
+      clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(() => setToast(null), 6000);
+    }
+    knownIds.current = new Set(rows.map(row => row.id));
+    setJobs(rows);
   };
 
   useEffect(() => {
     load();
     const c = supabase.channel('realtime_payment_process')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, load)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'appointments' }, (_payload) => load(_payload))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'appointments' }, (_payload) => load(_payload))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'appointments' }, (_payload) => load(_payload))
       .subscribe();
-    return () => supabase.removeChannel(c);
+    return () => { clearTimeout(toastTimer.current); supabase.removeChannel(c); };
   }, []);
 
   const list = useMemo(() => {
+    const priority = job => freshIds.includes(job.id) ? 0 : job.status === 'completed' ? 1 : 2;
     return jobs
       .filter(j => `${j.full_name || ''} ${j.service_type || ''} ${j.id}`.toLowerCase().includes(term.toLowerCase()))
       .filter(j => {
         if (filter === 'all') return true;
         if (filter === 'pending') return j.payment_status !== 'paid';
         return j.status === 'completed';
-      });
-  }, [jobs, term, filter]);
+      })
+      .sort((a, b) => priority(a) - priority(b) || String(a.schedule_date || a.created_at || '').localeCompare(String(b.schedule_date || b.created_at || '')) || String(a.appointment_time || '').localeCompare(String(b.appointment_time || '')));
+  }, [jobs, term, filter, freshIds]);
+
+  const counts = useMemo(() => ({ all: jobs.length, pending: jobs.filter(j => j.payment_status !== 'paid').length, completed: jobs.filter(j => j.status === 'completed').length }), [jobs]);
 
   return (
-    <div className="shell">
+    <div className={`shell cashier-${theme}`}>
       <style>{css}</style>
-      <Sidebar go={onNavigate} logout={onLogout} />
+      <style>{`.money strong{display:flex;justify-content:space-between;align-items:center;padding:10px 11px;margin:2px -5px 0;background:rgba(234,179,8,.1);border-radius:8px;color:${C.gold};font-size:13px}.money strong b{font-size:17px;color:${C.gold}}.filter-count{margin-left:4px;padding:2px 6px;border-radius:99px;background:rgba(255,255,255,.08);color:inherit}.card{transition:border-color .18s,background .18s}.card:hover{border-color:rgba(234,179,8,.34)}.payment-toast{position:fixed;z-index:40;top:18px;right:20px;width:min(380px,calc(100vw - 32px));display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 15px;background:${C.panel};border:1px solid rgba(234,179,8,.38);border-left:3px solid ${C.gold};border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.35)}.payment-toast div{display:grid;gap:4px;min-width:0}.payment-toast b{font-size:13px;color:${C.gold}}.payment-toast span{font-size:12px;color:${C.text};overflow-wrap:anywhere}.payment-toast button{flex:none;border:0;background:transparent;color:${C.sub};cursor:pointer;padding:5px}.field b{color:${C.text}}.section h3{color:${C.text}}.steps button{border-radius:7px}.steps .done{color:${C.green}}.steps .now{color:${C.gold};outline:1px solid rgba(234,179,8,.3)}.methods button:hover,.filters button:hover{border-color:rgba(234,179,8,.45)}@media(max-width:760px){.queue>div{grid-template-columns:1fr}.filters{overflow-x:auto}.page{padding:16px}.modal>header,.modal main,.modal footer{padding-left:15px;padding-right:15px}}`}</style>
+      <Sidebar go={onNavigate} logout={onLogout} theme={theme} onToggleTheme={onToggleTheme} />
       <main className="page">
         <header>
           <div>
@@ -480,7 +523,7 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
             ['completed', 'Technician Completed']
           ].map(([k, l]) => (
             <button className={filter === k ? 'on' : ''} key={k} onClick={() => setFilter(k)}>
-              {l}
+              {l} <b className="filter-count">{counts[k]}</b>
             </button>
           ))}
         </div>
@@ -488,7 +531,7 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
           <p>{list.length} appointment{list.length === 1 ? '' : 's'} awaiting review</p>
           <div>
             {list.length ? (
-              list.map(j => <Card key={j.id} job={j} onReview={setChosen} />)
+              <AnimatePresence initial={false}>{list.map(j => <Card key={j.id} job={j} fresh={freshIds.includes(j.id)} onReview={setChosen} />)}</AnimatePresence>
             ) : (
               <article className="empty">No appointments match this filter.</article>
             )}
@@ -496,6 +539,10 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
         </section>
       </main>
       <AnimatePresence>
+        {toast && <motion.aside className="payment-toast" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+          <div><b>{toast.kind === 'date' ? 'Appointment date updated' : 'New payment appointment'}</b><span>{[toast.customer, toast.service].filter(Boolean).join(' — ') || toast.service}</span></div>
+          <button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={16} /></button>
+        </motion.aside>}
         {chosen && <Modal job={chosen} onClose={() => setChosen(null)} onDone={() => { setChosen(null); load(); }} />}
       </AnimatePresence>
     </div>

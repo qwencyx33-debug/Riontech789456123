@@ -10,18 +10,14 @@ import {
   Loader2,
   CheckCircle2,
   BadgeCheck,
-  Sparkles,
-  ShieldCheck,
-  ImageOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
 import Swal from 'sweetalert2';
 
-const NAVY = '#071A3D';
-const CARD = '#0B2350';
+const NAVY = 'var(--customer-navy)';
 const GOLD = '#FFC107';
-const TEXT_LIGHT = '#F5F7FB';
+const TEXT_LIGHT = 'var(--customer-text)';
 
 const pageVariants = {
   hidden: { opacity: 0 },
@@ -57,7 +53,7 @@ function CompletionRing({ percent, size = 128, stroke = 3.5 }) {
   const offset = c - (percent / 100) * c;
   return (
     <svg width={size} height={size} className="absolute inset-0 -rotate-90 pointer-events-none">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--customer-ring-track)" strokeWidth={stroke} />
       <motion.circle
         cx={size / 2}
         cy={size / 2}
@@ -144,30 +140,6 @@ const FloatingField = ({
   );
 };
 
-const SummaryWidget = ({ icon: Icon, label, value, tone = 'default' }) => {
-  const tones = {
-    default: { bg: 'bg-white/[0.04]', border: 'border-white/10', iconBg: 'bg-white/[0.06]', iconColor: 'text-slate-300' },
-    good: { bg: 'bg-amber-400/[0.06]', border: 'border-amber-400/20', iconBg: 'bg-amber-400/15', iconColor: 'text-amber-300' },
-    warn: { bg: 'bg-white/[0.04]', border: 'border-white/10', iconBg: 'bg-white/[0.06]', iconColor: 'text-slate-400' },
-  };
-  const t = tones[tone];
-  return (
-    <motion.div
-      variants={itemVariants}
-      whileHover={{ y: -3 }}
-      className={`flex items-center gap-3 rounded-2xl px-4 py-3.5 border backdrop-blur-md transition-all ${t.bg} ${t.border} hover:border-amber-400/30`}
-    >
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${t.iconBg}`}>
-        <Icon size={16} className={t.iconColor} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[8.5px] font-black uppercase tracking-widest text-slate-500">{label}</p>
-        <p className="text-[13px] font-black truncate mt-0.5" style={{ color: TEXT_LIGHT }}>{value}</p>
-      </div>
-    </motion.div>
-  );
-};
-
 const SubSection = ({ icon: Icon, title, subtitle, children, first = false }) => (
   <div className={`${first ? '' : 'border-t border-white/[0.06] pt-7 mt-7'}`}>
     <div className="flex items-center gap-2.5 mb-5">
@@ -184,19 +156,18 @@ const SubSection = ({ icon: Icon, title, subtitle, children, first = false }) =>
 );
 
 
-const ProfileSettings = ({ profile, setProfile, onBack }) => {
+const ProfileSettings = ({ profile, setProfile, onBack, theme = 'light' }) => {
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [avatarPulse, setAvatarPulse] = useState(false);
 
   
-  const { completeness, isVerified, hasContact, hasAvatar } = useMemo(() => {
+  const { completeness, hasContact, hasAvatar } = useMemo(() => {
     const fields = [profile.first_name, profile.last_name, profile.phone, profile.address, profile.avatar_url];
     const filled = fields.filter((f) => f && String(f).trim().length > 0).length;
     return {
       completeness: Math.round((filled / fields.length) * 100),
-      isVerified: Boolean(profile.phone && profile.address && profile.avatar_url),
       hasContact: Boolean(profile.phone && profile.address),
       hasAvatar: Boolean(profile.avatar_url),
     };
@@ -210,8 +181,8 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       title,
       text,
       icon,
-      background: CARD,
-      color: TEXT_LIGHT,
+      background: theme === 'light' ? '#EEF1F4' : '#0B2350',
+      color: theme === 'light' ? '#0F172A' : '#F5F7FB',
       confirmButtonColor: GOLD,
       customClass: {
         popup: 'rounded-[2rem] border border-white/10 shadow-2xl font-sans',
@@ -223,6 +194,10 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
 
   const handleDatabaseUpdate = async (e) => {
     e.preventDefault();
+    if (!profile?.id) {
+      notify('Update failed', 'We could not identify your profile. Please refresh and try again.', 'error');
+      return;
+    }
     setSaving(true);
 
     try {
@@ -235,7 +210,7 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
           address: profile.address,
           
         })
-        .eq('email', profile.email);
+        .eq('id', profile.id);
 
       if (error) throw error;
 
@@ -243,7 +218,8 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       setTimeout(() => setJustSaved(false), 2200);
       notify('Changes saved', 'Your profile has been updated successfully.', 'success');
     } catch (error) {
-      notify('Update failed', error.message, 'error');
+      console.error('Profile update failed:', error);
+      notify('Update failed', 'We could not save your profile. Please try again.', 'error');
     } finally {
       setSaving(false);
     }
@@ -257,7 +233,7 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
 
       const file = event.target.files[0];
       const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      const fileName = `${crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}.${fileExt}`;
       const filePath = `avatars/${fileName}`;
 
       
@@ -271,16 +247,17 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
-        .eq('email', profile.email);
+        .eq('id', profile.id);
 
       if (updateError) throw updateError;
 
-      setProfile({ ...profile, avatar_url: publicUrl });
+      setProfile((current) => ({ ...current, avatar_url: publicUrl }));
       setAvatarPulse(true);
       setTimeout(() => setAvatarPulse(false), 1200);
       notify('Photo updated', 'Your new profile photo is live.', 'success');
     } catch (error) {
-      notify('Upload failed', error.message, 'error');
+      console.error('Avatar upload failed:', error);
+      notify('Upload failed', 'We could not upload your photo. Please try again.', 'error');
     } finally {
       setUploading(false);
     }
@@ -291,8 +268,8 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       initial="hidden"
       animate="visible"
       variants={pageVariants}
-      className="max-w-4xl mx-auto pb-28 md:pb-12 min-h-screen"
-      style={{ background: '#030E10' }}
+      className="max-w-6xl mx-auto pb-24 md:pb-8 min-h-screen"
+      style={{ background: 'var(--customer-page)' }}
     >
       {}
       <motion.button
@@ -300,14 +277,14 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
         onClick={onBack}
         className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors mb-6 text-[10px] font-black uppercase tracking-widest pt-2 px-1"
       >
-        <ArrowLeft size={13} /> Back
+        <ArrowLeft size={13} /> Profile Settings
       </motion.button>
 
       {}
       <motion.div
         variants={itemVariants}
-        className="relative mx-1 rounded-[32px] overflow-hidden border border-white/10"
-        style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${CARD} 55%, #10285C 100%)` }}
+        className="relative mx-1 rounded-[24px] overflow-hidden border border-white/10"
+        style={{ background: 'var(--customer-header)' }}
       >
         {}
         <motion.div
@@ -319,18 +296,18 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
         <div className="absolute -top-24 -right-16 w-72 h-72 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -left-10 w-56 h-56 bg-amber-400/[0.06] rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative px-6 sm:px-10 pt-10 pb-16 flex flex-col sm:flex-row items-center sm:items-end gap-6 text-center sm:text-left">
+        <div className="relative px-5 sm:px-8 py-6 sm:py-7 flex flex-col sm:flex-row items-center sm:items-center gap-4 text-center sm:text-left">
           {}
           <motion.div
             className="relative shrink-0"
             animate={{ y: [0, -6, 0] }}
             transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <CompletionRing percent={completeness} />
+            <CompletionRing percent={completeness} size={92} stroke={3} />
             <motion.div
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.97 }}
-              className="relative w-28 h-28 m-2.5 rounded-full border-4 border-[#071A3D] bg-[#0B2350] flex items-center justify-center overflow-hidden group"
+              className="relative w-20 h-20 m-1.5 rounded-full border-4 border-[#071A3D] bg-[#0B2350] flex items-center justify-center overflow-hidden group"
             >
               {profile.avatar_url ? (
                 <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
@@ -383,58 +360,33 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
                   ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim()
                   : 'Welcome'}
               </h2>
-              {isVerified && (
                 <motion.span
-                  initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.6, delay: 0.4 }}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-[9px] font-black uppercase tracking-widest"
+                  initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-widest ${completeness === 100 ? 'bg-emerald-400/10 border-emerald-400/25 text-emerald-300' : 'bg-white/[0.04] border-white/10 text-slate-400'}`}
                 >
-                  <BadgeCheck size={11} /> Verified
+                  <BadgeCheck size={11} /> Profile {completeness === 100 ? 'Complete' : 'Incomplete'}
                 </motion.span>
-              )}
             </div>
             <p className="text-slate-400 text-[12.5px] font-semibold truncate mt-1">{profile.email}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80 mt-2">
-              Profile <AnimatedCounter value={completeness} suffix="%" /> complete
-            </p>
+            <div className="mt-2 flex flex-wrap justify-center sm:justify-start gap-2 text-[9px] font-bold uppercase tracking-wider">
+              <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-slate-400">{String(profile.role || '—').replace(/_/g, ' ')}</span>
+              <span className="rounded-full bg-amber-400/10 px-2.5 py-1 text-amber-300"><AnimatedCounter value={completeness} suffix="% complete" /></span>
+              <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-slate-400">Contact {hasContact ? 'complete' : 'incomplete'}</span>
+              <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-slate-400">Photo {hasAvatar ? 'uploaded' : 'not set'}</span>
+            </div>
           </div>
         </div>
       </motion.div>
 
       {}
-      <div className="relative -mt-7 px-3 grid grid-cols-2 lg:grid-cols-4 gap-3 z-10">
-        <SummaryWidget
-          icon={Sparkles}
-          label="Profile Completion"
-          value={<><AnimatedCounter value={completeness} suffix="%" /></>}
-          tone={completeness === 100 ? 'good' : 'default'}
-        />
-        <SummaryWidget
-          icon={hasContact ? BadgeCheck : ShieldCheck}
-          label="Contact Status"
-          value={hasContact ? 'Complete' : 'Incomplete'}
-          tone={hasContact ? 'good' : 'warn'}
-        />
-        <SummaryWidget
-          icon={isVerified ? BadgeCheck : ShieldCheck}
-          label="Account Status"
-          value={isVerified ? 'Verified' : 'Pending'}
-          tone={isVerified ? 'good' : 'warn'}
-        />
-        <SummaryWidget
-          icon={hasAvatar ? Camera : ImageOff}
-          label="Profile Photo"
-          value={hasAvatar ? 'Uploaded' : 'Not set'}
-          tone={hasAvatar ? 'good' : 'warn'}
-        />
-      </div>
-
       {}
-      <form onSubmit={handleDatabaseUpdate} className="mt-6 px-1">
+      <form onSubmit={handleDatabaseUpdate} className="mt-4 px-1">
         <motion.div
           variants={itemVariants}
-          className="rounded-[28px] border border-white/10 backdrop-blur-md p-6 sm:p-8"
-          style={{ background: 'rgba(11, 35, 80, 0.55)' }}
+          className="rounded-[24px] border border-white/10 backdrop-blur-md p-5 sm:p-7"
+          style={{ background: 'var(--customer-surface)' }}
         >
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8">
           <SubSection icon={User} title="Personal Information" subtitle="Your name as it appears across the account" first>
             <FloatingField
               icon={User}
@@ -450,31 +402,29 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
             />
           </SubSection>
 
-          <SubSection icon={Phone} title="Contact Information" subtitle="How we reach you">
+          <SubSection icon={Phone} title="Contact & Address" subtitle="How we reach you" first>
+            <FloatingField icon={Mail} label="Email (locked)" value={profile.email} readOnly />
             <FloatingField
               icon={Phone}
               label="Phone number"
               value={profile.phone}
               onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
             />
-            <FloatingField icon={Mail} label="Email (locked)" value={profile.email} readOnly />
-          </SubSection>
-
-          <SubSection icon={MapPin} title="Address" subtitle="Used for billing and delivery">
             <div className="md:col-span-2">
               <FloatingField
                 icon={MapPin}
                 as="textarea"
-                rows={3}
+                rows={2}
                 label="Street, city, region"
                 value={profile.address}
                 onChange={(e) => setProfile({ ...profile, address: e.target.value })}
               />
             </div>
           </SubSection>
+          </div>
 
           {}
-          <div className="hidden md:flex justify-end border-t border-white/[0.06] pt-7 mt-7">
+          <div className="hidden md:flex justify-end border-t border-white/[0.06] pt-5 mt-5">
             <SaveButton saving={saving} uploading={uploading} justSaved={justSaved} />
           </div>
         </motion.div>
@@ -483,7 +433,7 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       {}
       <div
         className="md:hidden fixed bottom-0 left-0 right-0 z-20 backdrop-blur-xl border-t border-white/10 px-4 py-3"
-        style={{ background: 'rgba(7, 26, 61, 0.9)' }}
+        style={{ background: 'var(--customer-surface)' }}
       >
         <SaveButton
           full
@@ -509,7 +459,7 @@ const SaveButton = ({ saving, uploading, justSaved, full = false, onClick }) => 
 
   return (
     <motion.button
-      type="submit"
+      type={full ? 'button' : 'submit'}
       onClick={(e) => { spawnRipple(e); onClick?.(e); }}
       disabled={saving || uploading}
       whileTap={{ scale: 0.97 }}

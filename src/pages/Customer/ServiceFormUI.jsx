@@ -200,20 +200,7 @@ function ServiceFormUI({
             </section>
           )}
 
-          <div className="mt-7">
-            <Field label="Tell us about the work">
-              <textarea
-                rows="4"
-                value={formData.description}
-                onChange={e => set({ description: e.target.value })}
-                className={input + ' resize-none'}
-                placeholder="Describe what you need..."
-              />
-              <span className="block text-xs text-slate-500">Add any specific requirements or instructions to help our team prepare.</span>
-            </Field>
-          </div>
-
-          <Nav back={onBack} next={() => onStepChange(3)} disabled={!formData.description?.trim()} />
+          <Nav back={onBack} next={() => onStepChange(3)} />
         </motion.section>
       )}
 

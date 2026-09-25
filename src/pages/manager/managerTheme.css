@@ -1,0 +1,62 @@
+.manager-light {
+  background: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.manager-light main,
+.manager-light [class*="min-h-screen"] {
+  background-color: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.manager-light aside {
+  background-color: #e5e9ee !important;
+  border-color: #cbd2da !important;
+}
+
+.manager-light header,
+.manager-light [class*="rounded-2xl"][class*="border"]:not(button) {
+  border-color: #cbd2da !important;
+}
+
+.manager-light [class*="bg-[#"]:not([class*="EAB308"]) {
+  background-color: #eef1f4 !important;
+}
+
+.manager-light [class*="bg-white/"] {
+  background-color: #e2e7ec !important;
+}
+
+.manager-light [class*="bg-black/"] {
+  background-color: rgba(15, 23, 42, .65) !important;
+}
+
+.manager-light [class*="from-[#"]:not([class*="EAB308"]),
+.manager-light [class*="via-[#"]:not([class*="EAB308"]),
+.manager-light [class*="to-[#"]:not([class*="EAB308"]) {
+  background-color: #eef1f4 !important;
+  background-image: none !important;
+}
+
+.manager-light [class*="text-white"],
+.manager-light [class*="text-slate-100"],
+.manager-light [class*="text-slate-200"] {
+  color: #172033 !important;
+}
+
+.manager-light [class*="text-slate-300"] { color: #334155 !important; }
+.manager-light [class*="text-slate-400"] { color: #526174 !important; }
+.manager-light [class*="text-slate-500"],
+.manager-light [class*="text-slate-600"] { color: #64748b !important; }
+.manager-light [class*="border-white/"] { border-color: #cbd2da !important; }
+.manager-light [style*="#030E10"],
+.manager-light [style*="#0A0F18"],
+.manager-light [style*="#07111c"] { background: #eef1f4 !important; }
+.manager-light input,
+.manager-light textarea,
+.manager-light select { color: #172033 !important; }
+.manager-light input::placeholder,
+.manager-light textarea::placeholder { color: #64748b !important; }
+.manager-light .manager-theme-toggle { color: #526174 !important; }
+.manager-light .manager-theme-toggle:hover { background: #dce2e8 !important; }
+.manager-light [class*="z-[100]"] [class*="text-white"] { color: #fff !important; }

@@ -1,0 +1,128 @@
+.cashier-light {
+  background: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.shell.cashier-light,
+.cashier-light .page {
+  background: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.cashier-light .sidebar,
+.cashier-light .side {
+  background: #e5e9ee !important;
+  border-color: #cbd2da !important;
+}
+
+.cashier-light .app,
+.cashier-light.page {
+  background: #e6e9ed !important;
+  color: #1e293b !important;
+}
+
+.cashier-light .top,
+.cashier-light.page > header {
+  background: #edf0f3 !important;
+  border-color: #cbd2da !important;
+}
+
+.cashier-light .card,
+.cashier-light .kpi:not(.primary),
+.cashier-light .user,
+.cashier-light .modal {
+  background: #eef1f4 !important;
+  border-color: #cbd2da !important;
+  color: #1e293b !important;
+  box-shadow: 0 5px 18px rgba(30, 41, 59, .07);
+}
+
+.cashier-light .info > div,
+.cashier-light .summary > div,
+.cashier-light .receipt,
+.cashier-light .no-receipt,
+.cashier-light .search,
+.cashier-light .filters button,
+.cashier-light .filters select,
+.cashier-light .icon-btn,
+.cashier-light .theme-toggle,
+.cashier-light .secondary,
+.cashier-light .back,
+.cashier-light .modal > header button,
+.cashier-light .methods button {
+  background: #e2e7ec !important;
+  border-color: #cbd2da !important;
+  color: #334155 !important;
+}
+
+.cashier-light .top h1,
+.cashier-light .brand b,
+.cashier-light .kpi strong,
+.cashier-light .card h2,
+.cashier-light .card b,
+.cashier-light .flow strong,
+.cashier-light .modal h1,
+.cashier-light .modal h2,
+.cashier-light .modal .field b,
+.cashier-light .modal .info b,
+.cashier-light .modal .summary b {
+  color: #172033 !important;
+}
+
+.cashier-light .top p,
+.cashier-light .top span,
+.cashier-light .card p,
+.cashier-light .card small,
+.cashier-light .kpi small,
+.cashier-light .kpi span,
+.cashier-light .nav,
+.cashier-light .side button,
+.cashier-light .steps button,
+.cashier-light .section label,
+.cashier-light .logout,
+.cashier-light .flow b,
+.cashier-light .modal p,
+.cashier-light .modal small,
+.cashier-light .field small,
+.cashier-light .meta,
+.cashier-light .method,
+.cashier-light .empty {
+  color: #526174 !important;
+}
+
+.cashier-light .table-wrap td,
+.cashier-light .table-wrap th {
+  border-color: #d7dde4 !important;
+  color: #334155 !important;
+}
+
+.cashier-light .table-wrap th { color: #64748b !important; }
+.cashier-light .recent-row { border-color: #d7dde4 !important; }
+.cashier-light .skel { background: linear-gradient(90deg, #dfe4e9 20%, #f0f2f4 50%, #dfe4e9 80%) !important; }
+.cashier-light input,
+.cashier-light select,
+.cashier-light textarea { color: #172033 !important; }
+.cashier-light input::placeholder,
+.cashier-light textarea::placeholder { color: #64748b !important; }
+.cashier-light .theme-toggle:hover { background: #d9e0e7 !important; }
+.sidebar-theme-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+  color: #9aabbe;
+  font: 700 11px inherit;
+  cursor: pointer;
+}
+.sidebar-theme-toggle:hover { border-color: rgba(232, 176, 0, .38); color: #e8b000; }
+.cashier-light .side button.active,
+.cashier-light .nav.active {
+  background: rgba(232, 176, 0, .16) !important;
+  border-color: rgba(180, 130, 0, .3) !important;
+  color: #795900 !important;
+}
