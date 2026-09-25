@@ -1377,7 +1377,7 @@ const CustomerDashboard = ({ userEmail }) => {
 
   
   return (
-    <div className="flex min-h-screen bg-[#040810] text-slate-200 font-sans selection:bg-amber-400/30">
+    <div className="flex min-h-screen bg-[#030E10] text-slate-200 font-sans selection:bg-amber-400/30">
 
       {}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">

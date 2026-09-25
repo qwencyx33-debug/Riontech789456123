@@ -292,7 +292,7 @@ const ProfileSettings = ({ profile, setProfile, onBack }) => {
       animate="visible"
       variants={pageVariants}
       className="max-w-4xl mx-auto pb-28 md:pb-12 min-h-screen"
-      style={{ background: '#000000' }}
+      style={{ background: '#030E10' }}
     >
       {}
       <motion.button

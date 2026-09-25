@@ -884,14 +884,14 @@ const ServiceHistory = ({ onBack }) => {
 
   if (loading && appointments.length === 0) {
     return (
-      <div className="space-y-6 p-1 min-h-screen" style={{ background: '#000000' }}>
+      <div className="space-y-6 p-1 min-h-screen" style={{ background: '#030E10' }}>
         <div className="space-y-3 pt-6">{[1, 2, 3].map(i => <SkeletonCard key={i} />)}</div>
       </div>
     );
   }
 
   return (
-    <div className="relative pb-20 min-h-screen" style={{ background: '#000000' }}>
+    <div className="relative pb-20 min-h-screen" style={{ background: '#030E10' }}>
       <style>{`
         @keyframes shimmer { 100% { transform: translateX(100%); } }
         @media print {

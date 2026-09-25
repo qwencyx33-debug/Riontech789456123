@@ -423,7 +423,7 @@ export default function DispatchingView() {
   const filters = [['all', 'All'], ['upcoming', 'Upcoming'], ['priority', 'Priority'], ['older', 'Older']];
 
   return (
-    <div className="min-h-screen bg-[#020617] px-5 py-6 font-sans text-slate-100 md:px-8">
+    <div className="min-h-screen bg-[#030E10] px-5 py-6 font-sans text-slate-100 md:px-8">
       <motion.main initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mx-auto max-w-7xl">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="flex items-center gap-3">

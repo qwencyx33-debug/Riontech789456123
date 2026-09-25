@@ -304,7 +304,7 @@ const ManagerDashboard = ({ onLogout }) => {
   const attentionCount = metrics.cashierApprovals.length + metrics.readyForDispatch.length + metrics.qualityReview.length;
 
   return (
-    <div className="min-h-screen bg-[#020617] font-sans text-slate-100">
+    <div className="min-h-screen bg-[#030E10] font-sans text-slate-100">
       <AnimatePresence>{mobileNav && <motion.button type="button" aria-label="Close navigation" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setMobileNav(false)} className="fixed inset-0 z-40 bg-black/60 md:hidden" />}</AnimatePresence>
       <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-white/[0.06] bg-[#031418] transition-transform md:translate-x-0 ${mobileNav ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-16 items-center gap-3 border-b border-white/[0.06] px-6"><span className="rounded-lg bg-[#EAB308] p-2 text-[#031418]"><ShieldCheck size={17} /></span><div><p className="text-sm font-bold text-white">Riontech</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Manager portal</p></div></div>

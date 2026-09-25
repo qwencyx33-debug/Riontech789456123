@@ -409,7 +409,7 @@ const TechnicianManagementView = () => {
     : 0;
 
   return (
-    <div className="min-h-screen w-full pb-20" style={{ background: '#020617' }}>
+    <div className="min-h-screen w-full pb-20" style={{ background: '#030E10' }}>
 
       {}
       <AnimatePresence>

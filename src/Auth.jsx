@@ -670,7 +670,7 @@ function Auth({ isOpen, onClose }) {
             </button>
           </div>
 
-          {/* ── Tab switcher (login / register only) ── */}
+          {}
           {view !== 'forgot' && (
             <div className="rt-tabs">
               <button

@@ -1418,7 +1418,7 @@ export default function TechnicianDashboard({ onLogout }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#04060c] text-slate-300 flex relative">
+    <div className="min-h-screen bg-[#030E10] text-slate-300 flex relative">
       <AmbientBackground />
       <Sidebar
         active={activeModule}
