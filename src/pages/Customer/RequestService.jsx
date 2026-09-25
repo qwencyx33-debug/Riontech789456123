@@ -382,7 +382,7 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.date || !formData.time || !formData.description || !formData.appointment_address) {
+    if (!formData.date || !formData.time || !formData.appointment_address) {
       mc.warning('Information Required', 'Please complete all required fields before submitting.');
       return false;
     }
@@ -403,7 +403,7 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
         address:           formData.appointment_address,
         service_type:      formData.service_type,
         service_id:        selectedService?.id || null,
-        details:           `${formData.description} (Qty: ${formData.quantity})`,
+        details:           `${formData.description?.trim() || formData.service_type} (Qty: ${formData.quantity})`,
         // The appointments schema stores customer access/request notes in
         // materials_notes. Keep the form-specific name separate from the DB field.
         materials_notes:   formData.special_instructions || '',
