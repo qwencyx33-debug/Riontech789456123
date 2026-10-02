@@ -25,6 +25,15 @@ const C = {
 const peso = n => `₱${(Number(n) || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
 const blank = v => v === null || v === undefined || v === '';
 const nice = s => (s || 'Pending').replace(/_/g, ' ');
+const isOldOrFinishedAppointment = appointment => {
+  const status = (appointment.status || '').toLowerCase();
+  const finishedStatuses = ['completed', 'awaiting_final_payment', 'cancelled', 'rejected'];
+  if (finishedStatuses.includes(status) || appointment.completed_at) return true;
+  if (!appointment.schedule_date) return false;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return String(appointment.schedule_date).slice(0, 10) < today;
+};
 
 const Field = ({ label, value }) => (
   <div className="field">
@@ -72,7 +81,7 @@ function Sidebar({ go, logout, theme, onToggleTheme }) {
   );
 }
 
-function Card({ job, onReview, fresh = false }) {
+function Card({ job, onReview, fresh = false, showBalance = false }) {
   let total = Number(job.price) || 0, down = Number(job.downpayment_paid) || 0;
   return (
     <motion.article 
@@ -89,18 +98,17 @@ function Card({ job, onReview, fresh = false }) {
         </div>
       </header>
       <div className="meta">
-        <span><Calendar size={14} />{job.schedule_date || 'No date'}</span>
-        <span><Clock size={14} />{job.appointment_time || 'No time'}</span>
+        <span><Calendar size={14} />{job.schedule_date || 'No date'}{job.appointment_time ? ` · ${job.appointment_time}` : ''}</span>
         <span><MapPin size={14} />{job.address || 'No location'}</span>
       </div>
-      <div className="money">
+      {showBalance && <div className="money">
         <span>Total <b>{peso(total)}</b></span>
-        <span>Downpayment <b>{peso(down)}</b></span>
-        <strong><span>Amount due</span><b>{peso(Math.max(0, total - down))}</b></strong>
-      </div>
+        <span>Paid <b>{peso(down)}</b></span>
+        <strong><span>Remaining balance</span><b>{peso(Math.max(0, total - down))}</b></strong>
+      </div>}
       <div className="badges">
         <em>{nice(job.status)}</em>
-        <em>Payment pending</em>
+        <em className="pending-badge">{nice(job.payment_status || 'Payment pending')}</em>
         {job.qc_status && <em>{job.qc_status}</em>}
       </div>
       <button className="review" onClick={() => onReview(job)}>
@@ -157,7 +165,7 @@ function useRelated(job) {
             ? supabase.from('profiles').select('id, first_name, last_name, email, role').eq('id', job.technician_id).maybeSingle()
             : emptyResult,
           job.user_id
-            ? supabase.from('profiles').select('id, first_name, last_name, email, role').eq('id', job.user_id).maybeSingle()
+            ? supabase.from('profiles').select('id, first_name, last_name, email, phone, role').eq('id', job.user_id).maybeSingle()
             : emptyResult
         ]);
 
@@ -199,43 +207,65 @@ const steps = ['Customer', 'Service', 'Project', 'Areas & Items', 'Technician Re
 function Modal({ job, onClose, onDone }) {
   const data = useRelated(job);
   const [step, setStep] = useState(0);
-  const [pay, setPay] = useState({ amount: '', method: 'Cash', refNo: '' });
+  const [pay, setPay] = useState({ amount: '0', method: job.payment_method || 'Cash', refNo: job.payment_ref || '' });
   const [busy, setBusy] = useState(false);
 
   const total = Number(job.price) || 0;
   const down = Number(job.downpayment_paid) || 0;
   const due = Math.max(0, total - down);
+  const customerSubmittedFinalPayment = (job.payment_status || '').toLowerCase() === 'awaiting_cashier_verification';
   const received = Number(pay.amount) || 0;
   const remain = Math.max(0, due - received);
   const change = Math.max(0, received - due);
 
-  useEffect(() => setPay(p => ({ ...p, amount: p.amount || String(due) })), [due]);
-
   const next = () => {
-    if (step === 5) {
-      if (received <= 0) {
-        return Swal.fire({
-          icon: 'error',
-          title: 'Missing Amount',
-          text: 'Enter the received payment amount.',
-          background: C.panel,
-          color: '#fff',
-          confirmButtonColor: C.gold
-        });
-      }
+    if (step === 5 && (!Number.isFinite(Number(pay.amount)) || received < 0)) {
+      return Swal.fire({
+        icon: 'error',
+        title: 'Invalid Amount',
+        text: 'Enter a valid payment amount of 0 or more.',
+        background: C.panel,
+        color: '#fff',
+        confirmButtonColor: C.gold
+      });
     }
     setStep(s => Math.min(6, s + 1));
   };
 
   const confirm = async () => {
     if (busy) return;
+    if (!Number.isFinite(Number(pay.amount)) || received < 0) {
+      return Swal.fire({ icon: 'error', title: 'Invalid Amount', text: 'Enter a valid payment amount of 0 or more.', background: C.panel, color: '#fff', confirmButtonColor: C.gold });
+    }
+    if (received === 0) {
+      const result = await Swal.fire({
+        icon: 'warning',
+        title: 'NO PAYMENT RECORDED',
+        html: `<p>No additional payment has been recorded.</p><p>Remaining balance: <strong>${peso(due)}</strong></p>`,
+        showCancelButton: true,
+        confirmButtonText: 'Continue Without Payment',
+        cancelButtonText: 'Go Back',
+        background: C.panel,
+        color: '#fff',
+        confirmButtonColor: C.gold
+      });
+      if (result.isConfirmed) onDone({ noPayment: true, toPending: true });
+      return;
+    }
     setBusy(true);
-    const { error } = await supabase.from('appointments').update({
-      payment_status: 'paid',
-      payment_method: pay.method,
-      payment_ref: pay.refNo || null,
-      status: 'awaiting_manager'
-    }).eq('id', job.id);
+    const totalPaid = down + received;
+    const fullyPaid = totalPaid >= total;
+    const paymentUpdate = {
+      downpayment_paid: totalPaid,
+      payment_status: fullyPaid ? 'paid' : 'downpayment_paid',
+      payment_method: pay.method || job.payment_method,
+      payment_ref: pay.refNo || job.payment_ref || null,
+    };
+    // Final-payment verification must not roll a completed service back into booking review.
+    if (fullyPaid && !['completed', 'awaiting_final_payment'].includes((job.status || '').toLowerCase())) {
+      paymentUpdate.status = 'awaiting_manager';
+    }
+    const { error } = await supabase.from('appointments').update(paymentUpdate).eq('id', job.id);
     
     setBusy(false);
     if (error) {
@@ -251,18 +281,26 @@ function Modal({ job, onClose, onDone }) {
 
     Swal.fire({
       icon: 'success',
-      title: 'Payment Recorded',
-      text: `${job.full_name || 'Customer'} payment has been sent for manager approval.`,
+      title: fullyPaid ? 'Payment Recorded' : 'PARTIAL PAYMENT RECORDED',
+      text: fullyPaid
+        ? ['completed', 'awaiting_final_payment'].includes((job.status || '').toLowerCase())
+          ? `${job.full_name || 'Customer'} remaining balance has been verified.${change > 0 ? ` Change due: ${peso(change)}.` : ''}`
+          : `${job.full_name || 'Customer'} payment has been sent for manager approval.${change > 0 ? ` Change due: ${peso(change)}.` : ''}`
+        : `${peso(received)} received. Remaining balance: ${peso(Math.max(0, due - received))}.`,
       background: C.panel,
       color: '#fff',
       confirmButtonColor: C.gold,
       timer: 2200,
       showConfirmButton: false
     });
-    onDone();
+    onDone({ toPending: !fullyPaid });
   };
 
   const service = data.service || {}, project = data.project || {}, report = data.report || {};
+  const paymentState = received === 0 ? 'Payment Pending' : received > due ? 'Overpayment' : received >= due ? 'Full Payment' : 'Partial Payment';
+  const paymentStateDetail = received === 0 ? 'No additional payment has been recorded.' : received > due ? `Change due: ${peso(change)}` : received >= due ? 'The remaining balance is covered.' : `Remaining balance: ${peso(remain)}`;
+  const totalPaidAfterPayment = down + received;
+  const fullyPaidAfterPayment = received > 0 && totalPaidAfterPayment >= total;
   const technicianName = data.tech
     ? [data.tech.first_name, data.tech.last_name].filter(Boolean).join(' ')
     : '';
@@ -271,7 +309,7 @@ function Modal({ job, onClose, onDone }) {
     <Section title="Customer & appointment">
       <div className="grid">
         <Field label="Customer" value={job.full_name} />
-        <Field label="Phone" value={null} />
+        <Field label="Phone" value={job.phone_number || data.customer?.phone} />
         <Field label="Email" value={data.customer?.email} />
         <Field label="Appointment" value={`${job.schedule_date || 'Not on record'}${job.appointment_time ? ` · ${job.appointment_time}` : ''}`} />
         <Field label="Address" value={job.address} />
@@ -331,20 +369,27 @@ function Modal({ job, onClose, onDone }) {
       <p>{report.technician_notes || data.qc?.findings || data.qc?.remarks || data.notes[0]?.note || job.manager_notes || 'Technician report not available.'}</p>
     </Section>,
     <Section title="Payment summary">
-      <div className="summary">
-        <Field label="Total price" value={peso(total)} />
-        <Field label="Downpayment paid" value={peso(down)} />
-        <Field label="Amount due" value={peso(due)} />
+      <div className="payment-summary-card">
+        <div><small>Total service</small><strong>{peso(total)}</strong></div>
+        <div><small>Previously paid</small><strong>{peso(down)}</strong></div>
+        <div className="balance-highlight"><small>Remaining balance</small><strong>{peso(due)}</strong></div>
       </div>
-      <label>
-        Amount received
-        <input type="number" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} />
-      </label>
-      <div className="summary">
-        <Field label="Remaining balance" value={peso(remain)} />
-        <Field label="Change" value={peso(change)} />
+      {customerSubmittedFinalPayment && <div className="submitted-payment">
+        <div className="verification-heading"><ShieldCheck size={18}/><b>Payment verification required</b></div>
+        <div className="verification-grid"><Field label="Expected payment" value={peso(due)} /><Field label="Payment method" value={job.payment_method || 'GCash'} /><Field label="Reference" value={job.payment_ref || 'Not recorded'} /></div>
+        <p className="submitted-note">Check the submitted receipt, then enter the amount you verified. Submission alone does not mark the payment as paid.</p>
+        {job.receipt_image && <a className="submitted-receipt" href={job.receipt_image} target="_blank" rel="noreferrer"><img src={job.receipt_image} alt="Customer submitted payment proof" /><span>View customer payment receipt ↗</span></a>}
+      </div>}
+      <div className="payment-entry-card">
+        <div className="entry-title"><div><small>Record payment</small><h4>Amount received / verified</h4></div><Banknote size={20}/></div>
+        <label className="amount-input-label" htmlFor="cashier-received-amount">Amount received today</label>
+        <div className="amount-input-wrap"><span>₱</span><input id="cashier-received-amount" type="number" min="0" step="0.01" value={pay.amount} onChange={e => setPay({ ...pay, amount: e.target.value })} aria-describedby="payment-entry-help" /></div>
+        <small id="payment-entry-help" className="payment-hint">Enter the actual amount received from the customer. Start at ₱0 when no new payment was collected.</small>
+        <div className="live-balance"><span>Balance after payment</span><strong>{peso(remain)}</strong></div>
+        <div className={`payment-state ${paymentState.toLowerCase().replace(/\s+/g, '-')}`} role="status"><b>{paymentState}</b><span>{paymentStateDetail}</span></div>
+        {change > 0 && <div className="change-notice"><span>Change to return</span><strong>{peso(change)}</strong></div>}
       </div>
-      <label>Payment method</label>
+      <label className="method-label">Payment method</label>
       <div className="methods">
         {[
           ['Cash', Banknote],
@@ -352,7 +397,7 @@ function Modal({ job, onClose, onDone }) {
           ['Bank', Building2],
           ['COD', Receipt]
         ].map(([n, I]) => (
-          <button className={pay.method === n ? 'selected' : ''} key={n} onClick={() => setPay({ ...pay, method: n })}>
+          <button type="button" aria-pressed={pay.method === n} className={pay.method === n ? 'selected' : ''} key={n} onClick={() => setPay({ ...pay, method: n })}>
             <I size={16} />
             {n}
           </button>
@@ -365,15 +410,18 @@ function Modal({ job, onClose, onDone }) {
         </label>
       )}
     </Section>,
-    <Section title="Review payment">
-      <div className="grid">
-        <Field label="Customer" value={job.full_name} />
-        <Field label="Service" value={job.service_type} />
-        <Field label="Appointment" value={`${job.schedule_date || '—'} · ${job.appointment_time || '—'}`} />
-        <Field label="Amount due" value={peso(due)} />
-        <Field label="Amount received" value={peso(received)} />
-        <Field label="Payment method" value={pay.method} />
-        <Field label="Reference" value={pay.refNo || 'Cash payment'} />
+    <Section title="Payment review">
+      <div className="review-receipt">
+        <header><div><small>Payment review</small><h4>{job.full_name || 'Customer'}</h4><span>{job.service_type || 'Service'} · {job.schedule_date || 'Date not set'} · {job.appointment_time || 'Time not set'}</span></div><em className={fullyPaidAfterPayment ? 'paid' : 'pending'}>{fullyPaidAfterPayment ? 'Fully paid' : received > 0 ? 'Partial payment' : 'Payment pending'}</em></header>
+        <div className="review-lines">
+          <div><span>Service total</span><b>{peso(total)}</b></div>
+          <div><span>Previous amount paid</span><b>{peso(down)}</b></div>
+          <div className="received-line"><span>Amount received today</span><b>{peso(received)}</b></div>
+          <div className="total-paid-line"><span>Total paid</span><b>{peso(totalPaidAfterPayment)}</b></div>
+          <div className="remaining-line"><span>Remaining balance</span><b>{peso(remain)}</b></div>
+          {change > 0 && <div><span>Change to return</span><b>{peso(change)}</b></div>}
+        </div>
+        <div className="review-meta"><Field label="Payment method" value={pay.method} /><Field label="Reference" value={pay.refNo || job.payment_ref || 'Cash payment'} /></div>
       </div>
     </Section>
   ][step];
@@ -414,7 +462,7 @@ function Modal({ job, onClose, onDone }) {
             </button>
           ) : (
             <button className="next" disabled={busy} onClick={confirm}>
-              {busy ? 'Processing…' : 'Confirm Payment'}
+              {busy ? 'Processing…' : (received === 0 ? 'Confirm No Payment' : received < due ? 'Record Partial Payment' : 'Confirm Full Payment')}
               <CheckCircle2 size={16} />
             </button>
           )}
@@ -427,7 +475,7 @@ function Modal({ job, onClose, onDone }) {
 export default function PaymentProcess({ onNavigate = () => {}, onLogout = () => {}, theme = 'dark', onToggleTheme = () => {} }) {
   const [jobs, setJobs] = useState([]);
   const [term, setTerm] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('appointments');
   const [chosen, setChosen] = useState(null);
   const [toast, setToast] = useState(null);
   const [freshIds, setFreshIds] = useState([]);
@@ -440,8 +488,6 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
     const { data, error } = await supabase
       .from('appointments')
       .select('*')
-      .neq('payment_status', 'paid')
-      .neq('status', 'awaiting_manager')
       .order('created_at', { ascending: false });
     if (error) {
       console.error('Unable to load appointments for payment processing.', error);
@@ -491,18 +537,27 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
     return jobs
       .filter(j => `${j.full_name || ''} ${j.service_type || ''} ${j.id}`.toLowerCase().includes(term.toLowerCase()))
       .filter(j => {
+        const paymentStatus = (j.payment_status || '').toLowerCase();
+        const outstanding = Math.max(0, (Number(j.price) || 0) - (Number(j.downpayment_paid) || 0));
         if (filter === 'all') return true;
-        if (filter === 'pending') return j.payment_status !== 'paid';
-        return j.status === 'completed';
+        if (filter === 'appointments') return !isOldOrFinishedAppointment(j);
+        if (filter === 'pending') return !['paid', 'full_paid'].includes(paymentStatus) && outstanding > 0;
+        return (j.status || '').toLowerCase() === 'completed';
       })
       .sort((a, b) => priority(a) - priority(b) || String(a.schedule_date || a.created_at || '').localeCompare(String(b.schedule_date || b.created_at || '')) || String(a.appointment_time || '').localeCompare(String(b.appointment_time || '')));
   }, [jobs, term, filter, freshIds]);
 
-  const counts = useMemo(() => ({ all: jobs.length, pending: jobs.filter(j => j.payment_status !== 'paid').length, completed: jobs.filter(j => j.status === 'completed').length }), [jobs]);
+  const counts = useMemo(() => ({
+    all: jobs.length,
+    appointments: jobs.filter(j => !isOldOrFinishedAppointment(j)).length,
+    pending: jobs.filter(j => !['paid', 'full_paid'].includes((j.payment_status || '').toLowerCase()) && Math.max(0, (Number(j.price) || 0) - (Number(j.downpayment_paid) || 0)) > 0).length,
+    completed: jobs.filter(j => (j.status || '').toLowerCase() === 'completed').length
+  }), [jobs]);
 
   return (
     <div className={`shell cashier-${theme}`}>
       <style>{css}</style>
+      <style>{`.payment-summary-card{display:grid;grid-template-columns:1fr 1fr 1.15fr;gap:12px;margin-bottom:16px;padding:16px;border:1px solid ${C.border};border-radius:12px;background:linear-gradient(135deg,rgba(234,179,8,.075),rgba(255,255,255,.018))}.payment-summary-card>div{display:grid;gap:7px;padding:7px 10px}.payment-summary-card small,.entry-title small,.review-receipt header small{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:${C.muted}}.payment-summary-card strong{font-size:20px;color:${C.text}}.payment-summary-card .balance-highlight{border-left:1px solid ${C.border}}.payment-summary-card .balance-highlight strong{font-size:25px;color:${C.gold}}.submitted-payment,.payment-entry-card,.review-receipt{margin:16px 0;padding:17px;border:1px solid ${C.border};border-radius:12px;background:${C.panel}}.verification-heading{display:flex;align-items:center;gap:8px;margin-bottom:14px;color:#fbbf24}.verification-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.verification-grid .field{padding:10px;border-radius:8px;background:rgba(255,255,255,.025)}.submitted-note{margin:12px 0 0!important;font-size:12px!important;color:${C.sub}!important;line-height:1.55}.submitted-receipt{display:flex;align-items:center;gap:12px;margin-top:13px;padding:9px;border-radius:9px;background:rgba(255,255,255,.035);color:${C.gold};font-size:12px;font-weight:700}.submitted-receipt img{width:76px;height:58px;object-fit:cover;border-radius:6px;background:${C.bg}}.entry-title{display:flex;justify-content:space-between;align-items:center;color:${C.gold}}.entry-title h4,.review-receipt h4{margin:4px 0 0;font-size:16px;color:${C.text}}.amount-input-label,.method-label{display:block;margin:18px 0 7px;font-size:12px;font-weight:700;color:${C.sub}}.amount-input-wrap{display:flex;align-items:center;gap:8px;padding:4px 14px;border:1px solid rgba(234,179,8,.32);border-radius:10px;background:${C.bg};color:${C.gold}}.amount-input-wrap:focus-within{border-color:${C.gold};box-shadow:0 0 0 3px ${C.goldSoft}}.amount-input-wrap>span{font-size:24px;font-weight:800}.amount-input-wrap input{width:100%;min-width:0;padding:12px 0;font-size:26px;font-weight:800;color:${C.text}}.amount-input-wrap input:focus-visible{outline:none}.payment-hint{display:block;margin-top:8px;color:${C.muted};font-size:11px;line-height:1.5}.live-balance{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:13px;border-radius:9px;background:rgba(234,179,8,.075)}.live-balance span{font-size:12px;color:${C.sub}}.live-balance strong{font-size:22px;color:${C.gold}}.payment-state,.change-notice{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:10px;padding:11px 12px;border:1px solid ${C.border};border-radius:9px}.payment-state b{text-transform:uppercase;font-size:11px;letter-spacing:.06em}.payment-state span,.change-notice span{font-size:12px;color:${C.sub};text-align:right}.payment-state.payment-pending{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.06)}.payment-state.payment-pending b{color:#fbbf24}.payment-state.partial-payment{border-color:rgba(249,115,22,.25);background:rgba(249,115,22,.06)}.payment-state.partial-payment b{color:#fb923c}.payment-state.full-payment{border-color:rgba(16,185,129,.25);background:rgba(16,185,129,.06)}.payment-state.full-payment b{color:${C.green}}.payment-state.overpayment,.change-notice{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06)}.payment-state.overpayment b,.change-notice strong{color:#fbbf24}.methods button{min-height:68px;transition:border-color .16s,background .16s,transform .16s}.methods button:hover{transform:translateY(-1px)}.methods button:focus-visible,.steps button:focus-visible,.modal button:focus-visible,.review:focus-visible{outline:2px solid ${C.gold};outline-offset:2px}.review-receipt>header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding-bottom:15px;border-bottom:1px solid ${C.border}}.review-receipt>header h4{font-size:19px}.review-receipt>header span{display:block;margin-top:6px;font-size:12px;color:${C.sub}}.review-receipt>header em{padding:6px 9px;border-radius:99px;font-size:10px;font-weight:800;font-style:normal;text-transform:uppercase}.review-receipt>header em.paid{color:${C.green};background:rgba(16,185,129,.1)}.review-receipt>header em.pending{color:#fbbf24;background:rgba(245,158,11,.1)}.review-lines{display:grid;gap:0;padding:8px 0}.review-lines>div{display:flex;justify-content:space-between;gap:12px;padding:10px 2px;color:${C.sub};font-size:12px}.review-lines b{color:${C.text};font-size:13px}.review-lines .received-line{color:${C.gold}}.review-lines .received-line b{font-size:17px;color:${C.gold}}.review-lines .total-paid-line,.review-lines .remaining-line{padding-top:13px;border-top:1px solid ${C.border}}.review-lines .total-paid-line b{color:${C.text}}.review-lines .remaining-line b{font-size:19px;color:${C.gold}}.review-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:12px;border-top:1px solid ${C.border}}.cashier-light .payment-summary-card,.cashier-light .submitted-payment,.cashier-light .payment-entry-card,.cashier-light .review-receipt{background:#eef1f4;border-color:#cbd2da}.cashier-light .payment-summary-card strong,.cashier-light .entry-title h4,.cashier-light .review-receipt h4,.cashier-light .review-lines b{color:#172033}.cashier-light .payment-summary-card .balance-highlight strong,.cashier-light .live-balance strong,.cashier-light .review-lines .remaining-line b,.cashier-light .review-lines .received-line b{color:#9a7100}.cashier-light .verification-grid .field,.cashier-light .submitted-receipt{background:#e2e7ec}.cashier-light .amount-input-wrap{background:#e2e7ec;border-color:#cbd2da}.cashier-light .amount-input-wrap input{color:#172033}.cashier-light .live-balance{background:rgba(234,179,8,.12)}.cashier-light .review-receipt>header span,.cashier-light .review-lines,.cashier-light .review-lines>div{color:#526174}@media(max-width:640px){.payment-summary-card{grid-template-columns:1fr 1fr}.payment-summary-card .balance-highlight{grid-column:1/-1;border-left:0;border-top:1px solid ${C.border};padding-top:13px}.verification-grid{grid-template-columns:1fr}.review-receipt>header{flex-direction:column}.review-meta{grid-template-columns:1fr}.amount-input-wrap input{font-size:22px}.payment-state,.change-notice{align-items:flex-start;flex-direction:column}.payment-state span,.change-notice span{text-align:left}}`}</style>
       <style>{`.money strong{display:flex;justify-content:space-between;align-items:center;padding:10px 11px;margin:2px -5px 0;background:rgba(234,179,8,.1);border-radius:8px;color:${C.gold};font-size:13px}.money strong b{font-size:17px;color:${C.gold}}.filter-count{margin-left:4px;padding:2px 6px;border-radius:99px;background:rgba(255,255,255,.08);color:inherit}.card{transition:border-color .18s,background .18s}.card:hover{border-color:rgba(234,179,8,.34)}.payment-toast{position:fixed;z-index:40;top:18px;right:20px;width:min(380px,calc(100vw - 32px));display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 15px;background:${C.panel};border:1px solid rgba(234,179,8,.38);border-left:3px solid ${C.gold};border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.35)}.payment-toast div{display:grid;gap:4px;min-width:0}.payment-toast b{font-size:13px;color:${C.gold}}.payment-toast span{font-size:12px;color:${C.text};overflow-wrap:anywhere}.payment-toast button{flex:none;border:0;background:transparent;color:${C.sub};cursor:pointer;padding:5px}.field b{color:${C.text}}.section h3{color:${C.text}}.steps button{border-radius:7px}.steps .done{color:${C.green}}.steps .now{color:${C.gold};outline:1px solid rgba(234,179,8,.3)}.methods button:hover,.filters button:hover{border-color:rgba(234,179,8,.45)}@media(max-width:760px){.queue>div{grid-template-columns:1fr}.filters{overflow-x:auto}.page{padding:16px}.modal>header,.modal main,.modal footer{padding-left:15px;padding-right:15px}}`}</style>
       <Sidebar go={onNavigate} logout={onLogout} theme={theme} onToggleTheme={onToggleTheme} />
       <main className="page">
@@ -519,6 +574,7 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
         <div className="filters">
           {[
             ['all', 'All'],
+            ['appointments', 'Appointments'],
             ['pending', 'Payment Pending'],
             ['completed', 'Technician Completed']
           ].map(([k, l]) => (
@@ -528,10 +584,10 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
           ))}
         </div>
         <section className="queue">
-          <p>{list.length} appointment{list.length === 1 ? '' : 's'} awaiting review</p>
+          <p>{list.length} appointment{list.length === 1 ? '' : 's'} {filter === 'pending' ? 'with a remaining balance' : filter === 'completed' ? 'completed by technicians' : 'in the appointment list'}</p>
           <div>
-            {list.length ? (
-              <AnimatePresence initial={false}>{list.map(j => <Card key={j.id} job={j} fresh={freshIds.includes(j.id)} onReview={setChosen} />)}</AnimatePresence>
+              {list.length ? (
+              <AnimatePresence initial={false}>{list.map(j => <Card key={j.id} job={j} fresh={freshIds.includes(j.id)} showBalance={filter === 'pending'} onReview={setChosen} />)}</AnimatePresence>
             ) : (
               <article className="empty">No appointments match this filter.</article>
             )}
@@ -543,7 +599,7 @@ export default function PaymentProcess({ onNavigate = () => {}, onLogout = () =>
           <div><b>{toast.kind === 'date' ? 'Appointment date updated' : 'New payment appointment'}</b><span>{[toast.customer, toast.service].filter(Boolean).join(' — ') || toast.service}</span></div>
           <button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={16} /></button>
         </motion.aside>}
-        {chosen && <Modal job={chosen} onClose={() => setChosen(null)} onDone={() => { setChosen(null); load(); }} />}
+        {chosen && <Modal job={chosen} onClose={() => setChosen(null)} onDone={(result) => { setChosen(null); if (result?.toPending) setFilter('pending'); load(); }} />}
       </AnimatePresence>
     </div>
   );

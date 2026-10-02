@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 // eslint-disable-next-line no-unused-vars -- `motion.*` is used as a JSX namespace.
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -16,6 +16,17 @@ const Shimmer = ({ className = '' }) => (
     style={{ animation: 'shimmer 1.8s infinite' }}
   />
 );
+
+const localDateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const normalizeAppointmentTime = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!match) return String(value || '').trim().toUpperCase();
+  let hour = Number(match[1]);
+  const period = match[3]?.toUpperCase();
+  if (period) hour = (hour % 12) + (period === 'PM' ? 12 : 0);
+  return `${String(hour % 12 || 12).padStart(2, '0')}:${match[2]} ${hour >= 12 ? 'PM' : 'AM'}`;
+};
+const isActiveAppointment = (status) => !['cancelled', 'canceled', 'rejected', 'completed'].includes(String(status || '').toLowerCase());
 
 
 const BookingSteps = ({ step }) => {
@@ -281,8 +292,12 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
   const [selectedService,  setSelectedService]  = useState(null);
   const [bookingResult,    setBookingResult]    = useState(null);
   const [currentPage,      setCurrentPage]      = useState(1);
+  const [bookedAppointmentsByDate, setBookedAppointmentsByDate] = useState({});
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(false);
 
   const mc = useMessageCenter();
+  const showServiceLoadError = mc.error;
 
   const [formData, setFormData] = useState({
     service_type: '',
@@ -303,9 +318,69 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
     reference_number: '',
     receipt_url: '',
     actual_paid_amount: 0,
+    project_details_enabled: false,
+    project_details: {},
+    include_items: false,
     areas: [],
     items: [],
+    location_region: '',
+    location_city: '',
+    location_barangay: '',
+    location_street: '',
   });
+
+  const loadAppointmentAvailability = useCallback(async () => {
+    setAvailabilityLoading(true);
+    try {
+      const today = localDateKey(new Date());
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('schedule_date, appointment_time, status')
+        .gte('schedule_date', today);
+      if (error) throw error;
+
+      const byDate = {};
+      (data || []).filter((appointment) => isActiveAppointment(appointment.status)).forEach((appointment) => {
+        const date = String(appointment.schedule_date || '').slice(0, 10);
+        const time = normalizeAppointmentTime(appointment.appointment_time);
+        if (!date || !time) return;
+        (byDate[date] ||= []).push(time);
+      });
+      setBookedAppointmentsByDate(byDate);
+      setAvailabilityError(false);
+    } catch (error) {
+      setAvailabilityError(true);
+      console.error('Unable to load appointment availability:', error);
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAppointmentAvailability();
+    let refreshTimer;
+    const refreshSoon = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadAppointmentAvailability, 150);
+    };
+    const channel = supabase
+      .channel('customer-booking-availability')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, refreshSoon)
+      .subscribe();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadAppointmentAvailability();
+    }, 60000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadAppointmentAvailability();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      supabase.removeChannel(channel);
+    };
+  }, [loadAppointmentAvailability]);
 
   
   const getDownpaymentAmount = () => {
@@ -325,12 +400,12 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
         .eq('is_archived', false)
         .order('title', { ascending: true });
       if (!error) setServices(data || []);
-      else mc.error('Could not load services', error.message);
+      else showServiceLoadError('Could not load services', error.message);
       setFetchingServices(false);
     };
     fetchActiveServices();
     
-  }, []);
+  }, [showServiceLoadError]);
 
   
   const handleServiceSelect = (service) => {
@@ -352,6 +427,18 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
       description: '',
       actual_paid_amount: minDownpayment,
       payment_type: 'downpayment',
+      date: '',
+      time: '',
+      appointment_address: profile?.address || '',
+      project_details_enabled: false,
+      project_details: {},
+      include_items: false,
+      areas: [],
+      items: [],
+      location_region: '',
+      location_city: '',
+      location_barangay: '',
+      location_street: '',
     });
     setStep(2);
   };
@@ -382,8 +469,13 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.date || !formData.time || !formData.appointment_address) {
-      mc.warning('Information Required', 'Please complete all required fields before submitting.');
+    if (!formData.date || !formData.time || !formData.appointment_address || !formData.location_region || !formData.location_city || !formData.location_barangay || !formData.location_street?.trim()) {
+      mc.warning('Information Required', 'Please complete your service location and appointment schedule before submitting.');
+      return false;
+    }
+    if (!/^\d{11}$/.test(String(formData.reference_number || ''))) {
+      mc.warning('Invalid GCash reference number', 'Enter exactly 11 digits with no letters or symbols.');
+      setStep(6);
       return false;
     }
 
@@ -397,6 +489,29 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
     setLoading(true);
     const loader = mc.loading('Submitting your booking', 'Please don\u2019t close this window.');
     try {
+      const { data: sameSlot, error: availabilityCheckError } = await supabase
+        .from('appointments')
+        .select('status, appointment_time')
+        .eq('schedule_date', formData.date);
+      if (availabilityCheckError) throw availabilityCheckError;
+      if ((sameSlot || []).some((appointment) =>
+        isActiveAppointment(appointment.status) && normalizeAppointmentTime(appointment.appointment_time) === normalizeAppointmentTime(formData.time)
+      )) {
+        loader.close();
+        const date = formData.date;
+        const time = normalizeAppointmentTime(formData.time);
+        setBookedAppointmentsByDate((current) => ({
+          ...current,
+          [date]: [...new Set([...(current[date] || []), time])],
+        }));
+        setStep(5);
+        await mc.confirm('Time no longer available', 'Another appointment has taken this time. Choose a different available slot to continue.', {
+          confirmLabel: 'Choose another time',
+          cancelLabel: 'Close',
+        });
+        return false;
+      }
+
       const { data, error } = await supabase.from('appointments').insert([{
         user_id:           profile.id,
         full_name:         `${profile.first_name} ${profile.last_name}`,
@@ -420,12 +535,41 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
       }]).select().single();
       if (error) throw error;
 
+      if (formData.project_details_enabled) {
+        const project = formData.project_details || {};
+        const projectDetails = { appointment_id: data.id };
+        const textFields = ['property_type', 'property_size_unit', 'site_notes', 'customer_requirements', 'customer_comments'];
+        textFields.forEach((field) => {
+          const value = String(project[field] || '').trim();
+          if (value) projectDetails[field] = value;
+        });
+        const numericFields = ['property_size', 'floor_count', 'room_count'];
+        numericFields.forEach((field) => {
+          if (project[field] === '' || project[field] == null) return;
+          const value = Number(project[field]);
+          if (Number.isFinite(value) && value > 0) projectDetails[field] = value;
+        });
+
+        if (Object.keys(projectDetails).length > 1) {
+          const { data: existingDetails, error: lookupError } = await supabase
+            .from('appointment_project_details')
+            .select('appointment_id')
+            .eq('appointment_id', data.id)
+            .maybeSingle();
+          if (lookupError) throw lookupError;
+          const result = existingDetails
+            ? await supabase.from('appointment_project_details').update(projectDetails).eq('appointment_id', data.id)
+            : await supabase.from('appointment_project_details').insert(projectDetails);
+          if (result.error) throw result.error;
+        }
+      }
+
       const areaRows = (formData.areas || [])
         .filter(area => area.name?.trim())
         .map(area => ({
           appointment_id: data.id,
           area_name: area.name.trim(),
-          area_size: area.size === '' ? null : Number(area.size),
+          area_size: area.size === '' || !Number.isFinite(Number(area.size)) ? null : Number(area.size),
           area_size_unit: area.unit || 'sqm',
           quantity: Number(area.quantity) || 1,
           notes: area.notes?.trim() || null,
@@ -690,6 +834,9 @@ const RequestService = ({ profile, onBack, onSuccess }) => {
                 onContinue={() => setStep(7)}
                 step={step}
                 onStepChange={setStep}
+                bookedAppointmentsByDate={bookedAppointmentsByDate}
+                availabilityLoading={availabilityLoading}
+                availabilityError={availabilityError}
               />
             </motion.div>
           )}
@@ -736,6 +883,16 @@ const ReviewPanel = ({ profile, formData, loading, onEdit, onSubmit }) => {
     { label: 'Amount Due Now', value: `₱${Number(formData.actual_paid_amount || 0).toLocaleString()}` },
     { label: 'Special Instructions', value: formData.special_instructions || '—' },
   ];
+  const project = formData.project_details || {};
+  const projectSummary = [
+    project.property_type,
+    project.property_size && `${project.property_size} ${project.property_size_unit || 'sqm'}`,
+    project.floor_count && `${project.floor_count} floors`,
+    project.room_count && `${project.room_count} rooms`,
+    project.site_notes,
+    project.customer_requirements,
+    project.customer_comments,
+  ].filter(Boolean);
   const areas = (formData.areas || []).filter(area => area.name?.trim());
   const items = (formData.items || []).filter(item => item.name?.trim());
 
@@ -751,8 +908,9 @@ const ReviewPanel = ({ profile, formData, loading, onEdit, onSubmit }) => {
         </div>
       </div>
 
-      {(areas.length > 0 || items.length > 0) && (
+      {(projectSummary.length > 0 || areas.length > 0 || items.length > 0) && (
         <div className="mb-6 grid gap-4 md:grid-cols-2">
+          {projectSummary.length > 0 && <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><div className="flex justify-between"><h3 className="font-bold text-white">Property overview</h3><button onClick={() => onEdit(3)} className="text-sm font-semibold text-[#F5C518]">Change</button></div><div className="mt-3 space-y-2">{projectSummary.map((value, index) => <p key={index} className="text-sm text-slate-400">{value}</p>)}</div></div>}
           {areas.length > 0 && <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><div className="flex justify-between"><h3 className="font-bold text-white">Project / areas</h3><button onClick={() => onEdit(3)} className="text-sm font-semibold text-[#F5C518]">Change</button></div><div className="mt-3 space-y-2">{areas.map((area, index) => <p key={index} className="text-sm text-slate-400">{area.name} {area.size ? '— ' + area.size + ' ' + (area.unit || 'sqm') : ''} · Qty {area.quantity || 1}</p>)}</div></div>}
           {items.length > 0 && <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4"><div className="flex justify-between"><h3 className="font-bold text-white">Items / equipment</h3><button onClick={() => onEdit(3)} className="text-sm font-semibold text-[#F5C518]">Change</button></div><div className="mt-3 space-y-2">{items.map((item, index) => <p key={index} className="text-sm text-slate-400">{item.name} · Qty {item.quantity || 1}</p>)}</div></div>}
         </div>

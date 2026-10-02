@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../supabaseClient';
+import { useVisibleRefresh } from '../../hooks/useVisibleRefresh';
 // eslint-disable-next-line no-unused-vars -- `motion.*` is used as a JSX namespace.
 import { AnimatePresence, motion } from 'framer-motion';
 import { Activity, AlertTriangle, BellRing, CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, Database, LayoutDashboard, LogOut, RefreshCw, ShieldCheck, Users, Wrench, X, Clock3, MapPinned, PackageCheck } from 'lucide-react';
@@ -91,6 +92,7 @@ export default function AdminDashboard({ onLogout }) {
     }
   }, []);
   useEffect(() => { load(); supabase.auth.getUser().then(({ data }) => { const u = data?.user, n = u?.user_metadata?.full_name || u?.user_metadata?.name || u?.email?.split('@')[0]; if (n) setName(n); }); }, [load]);
+  useVisibleRefresh(() => load({ background: true }));
   const dismissArrivalAlert = useCallback((id) => {
     const timer = alertTimers.current.get(id);
     if (timer) clearTimeout(timer);
@@ -128,15 +130,14 @@ export default function AdminDashboard({ onLogout }) {
           setAppointments((current) => current.filter((appointment) => appointment.id !== payload.old.id));
         }
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => load({ background: true }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_logs' }, () => load({ background: true }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_areas' }, () => load({ background: true }))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_items' }, () => load({ background: true }))
       .subscribe((status) => {
         setRealtimeStatus(status === 'SUBSCRIBED' ? 'live' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' ? 'offline' : 'connecting');
       });
-    const fallback = setInterval(() => load({ background: true }), 60000);
     return () => {
-      clearInterval(fallback);
       timers.forEach(clearTimeout);
       timers.clear();
       supabase.removeChannel(channel);

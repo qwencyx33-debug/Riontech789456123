@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
+import { useVisibleRefresh } from '../../hooks/useVisibleRefresh';
 import DispatchingView from './DispatchingView';
 import QCVerificationView from './QCVerificationView';
 import TechnicianManagementView from './TechnicianManagementView';
@@ -263,24 +264,43 @@ const ManagerDashboard = ({ onLogout }) => {
     catch (error) { console.warn('Unable to save manager theme preference.', error); }
   }, [theme]);
 
-  const loadDashboardData = async () => {
-    setLoading(true);
+  const loadDashboardData = async (background = false) => {
+    if (!background) setLoading(true);
     const [appointmentsResult, techniciansResult] = await Promise.all([
       supabase.from('appointments').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('role', 'technician'),
     ]);
-    setAppointments(appointmentsResult.data || []);
-    setTechnicians(techniciansResult.data || []);
-    setLoading(false);
+    if (!appointmentsResult.error) setAppointments(appointmentsResult.data || []);
+    if (!techniciansResult.error) setTechnicians(techniciansResult.data || []);
+    if (!background) setLoading(false);
   };
+
+  useVisibleRefresh(() => loadDashboardData(true));
 
   useEffect(() => {
     loadDashboardData();
+    let refreshTimer;
+    const refresh = () => {
+      if (refreshTimer) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        loadDashboardData(true);
+      }, 100);
+    };
     const subscription = supabase
       .channel('manager_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, loadDashboardData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: 'role=eq.technician' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_project_details' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_areas' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointment_items' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_reports' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_logs' }, refresh)
       .subscribe();
-    return () => supabase.removeChannel(subscription);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      supabase.removeChannel(subscription);
+    };
   }, []);
 
   const metrics = useMemo(() => {

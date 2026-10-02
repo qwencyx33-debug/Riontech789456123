@@ -1,11 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 // eslint-disable-next-line no-unused-vars -- `motion.*` is used as a JSX namespace.
 import { AnimatePresence, motion } from 'framer-motion';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 import { 
-  ArrowLeft, ArrowRight, Banknote, Calendar, CheckCircle2, 
-  Info, Loader2, MapPin, Package, Plus,
+  ArrowLeft, ArrowRight, Banknote, CheckCircle2,
+  Info, Loader2, MapPin, Package,
   Upload, Wallet, X
 } from 'lucide-react';
 
@@ -35,6 +33,20 @@ const groups = {
   Morning: ['07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM'], 
   Afternoon: ['12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM'], 
   Evening: ['05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM'] 
+};
+const timeSlots = Object.values(groups).flat();
+const newFormRowId = () => window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const normalizeTime = (value) => {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/i);
+  if (!match) return String(value || '').trim().toUpperCase();
+  let hour = Number(match[1]);
+  const minutes = match[2];
+  const period = match[3]?.toUpperCase();
+  if (period) hour = (hour % 12) + (period === 'PM' ? 12 : 0);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  return `${String(hour % 12 || 12).padStart(2, '0')}:${minutes} ${suffix}`;
 };
 
 const input = 'w-full rounded-2xl border border-white/10 bg-white/[.04] px-4 py-3.5 text-sm text-white outline-none transition focus:border-[#F5C518]/60 placeholder:text-slate-600 disabled:opacity-40';
@@ -94,23 +106,48 @@ const Nav = ({ back, next, disabled, label = 'Continue' }) => (
   </div>
 );
 
-const AreaEditor = ({ formData, set }) => {
+const AreaEditor = ({ formData, set, selectedService, onContinue }) => {
   const areas = formData.areas || [];
   const items = formData.items || [];
   const update = (collection, index, changes) => set({ [collection]: (formData[collection] || []).map((entry, i) => i === index ? { ...entry, ...changes } : entry) });
   const remove = (collection, index) => set({ [collection]: (formData[collection] || []).filter((_, i) => i !== index) });
-  const addArea = () => set({ areas: [...areas, { name: '', size: '', unit: 'sqm', quantity: 1, notes: '' }] });
-  const addItem = () => set({ items: [...items, { name: '', description: '', quantity: 1, comment: '' }] });
+  const addArea = () => set({ areas: [...areas, { id: newFormRowId(), name: '', size: '', unit: 'sqm', quantity: 1, notes: '' }] });
+  const addItem = () => set({ items: [...items, { id: newFormRowId(), name: '', description: '', quantity: 1, comment: '' }] });
+  const project = formData.project_details || {};
+  const updateProject = (field, value) => set({ project_details: { ...project, [field]: value } });
+  const isEquipmentService = /cctv|camera|access control|alarm|fire|security system/i.test(`${selectedService?.title || ''} ${selectedService?.service_categories?.name || ''}`);
+  const filledAreas = areas.filter((area) => area.name?.trim());
+  const overviewValues = [
+    project.property_size && [`${project.property_size} ${project.property_size_unit || 'sqm'}`, 'Property size'],
+    project.floor_count && [project.floor_count, 'Floors'],
+    project.room_count && [project.room_count, 'Rooms'],
+  ].filter(Boolean);
 
-  return <div className="mt-7 space-y-7">
-    <section>
-      <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Areas / rooms</h2><p className="mt-1 text-sm text-slate-500">Optional, but helpful for an accurate assessment.</p></div><button type="button" onClick={addArea} className="rounded-xl border border-[#F5C518]/35 px-4 py-2 text-sm font-semibold text-[#F5C518] hover:bg-[#F5C518]/10">+ Add area</button></div>
-      <div className="mt-4 space-y-4">{areas.map((area, index) => <div key={index} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-white">Area {String(index + 1).padStart(2, '0')}</h3><button type="button" onClick={() => remove('areas', index)} className="text-sm font-semibold text-red-300 hover:text-red-200">Remove</button></div><div className="grid gap-4 md:grid-cols-2"><Field label="Room / area"><input value={area.name} onChange={e => update('areas', index, { name: e.target.value })} className={input} placeholder="e.g. Living room"/></Field><div className="grid grid-cols-[1fr_110px] gap-3"><Field label="Size"><input type="number" min="0" value={area.size} onChange={e => update('areas', index, { size: e.target.value })} className={input} placeholder="25"/></Field><Field label="Unit"><select value={area.unit} onChange={e => update('areas', index, { unit: e.target.value })} className={input}><option value="sqm">sqm</option><option value="sq ft">sq ft</option></select></Field></div><Field label="Quantity"><input type="number" min="1" value={area.quantity} onChange={e => update('areas', index, { quantity: Math.max(1, Number(e.target.value) || 1) })} className={input}/></Field><Field label="Notes"><input value={area.notes} onChange={e => update('areas', index, { notes: e.target.value })} className={input} placeholder="Add details about this area..."/></Field></div></div>)}</div>
-      {!areas.length && <button type="button" onClick={addArea} className="mt-4 rounded-2xl border border-dashed border-white/15 px-5 py-4 text-sm text-slate-400 hover:border-[#F5C518]/40 hover:text-[#F5C518]">+ Add another area</button>}
+  return <div className="mt-7 space-y-8">
+    <section className="rounded-2xl border border-white/[.08] bg-white/[.025] p-5 md:p-6">
+      <div className="mb-5"><p className="text-xs font-bold uppercase tracking-[.16em] text-[#F5C518]">Property overview</p><p className="mt-1 text-sm text-slate-400">Share only what helps our team prepare.</p></div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Property type"><select value={project.property_type || ''} onChange={(event) => updateProject('property_type', event.target.value)} className={input}><option value="">Select property type</option>{['House', 'Apartment', 'Office', 'Commercial', 'Other'].map((value) => <option key={value}>{value}</option>)}</select></Field>
+        <div className="grid grid-cols-[1fr_110px] gap-3"><Field label="Property size"><input type="number" min="1" value={project.property_size || ''} onChange={(event) => updateProject('property_size', event.target.value)} className={input} placeholder="e.g. 120" /></Field><Field label="Unit"><select value={project.property_size_unit || 'sqm'} onChange={(event) => updateProject('property_size_unit', event.target.value)} className={input}><option value="sqm">sqm</option><option value="sq ft">sq ft</option></select></Field></div>
+        <Field label="Number of floors"><input type="number" min="1" step="1" value={project.floor_count || ''} onChange={(event) => updateProject('floor_count', event.target.value)} className={input} placeholder="Optional" /></Field>
+        <Field label="Number of rooms"><input type="number" min="1" step="1" value={project.room_count || ''} onChange={(event) => updateProject('room_count', event.target.value)} className={input} placeholder="Optional" /></Field>
+      </div>
+      {overviewValues.length > 0 && <div className="mt-5 rounded-xl border border-[#F5C518]/15 bg-[#F5C518]/[.04] p-4"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#F5C518]">Project overview</p><div className="mt-3 grid grid-cols-3 gap-3">{overviewValues.map(([value, label]) => <div key={label}><p className="text-lg font-black text-white">{value}</p><p className="text-xs text-slate-500">{label}</p></div>)}</div></div>}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2"><Field label="Site notes"><textarea rows="2" value={project.site_notes || ''} onChange={(event) => updateProject('site_notes', event.target.value)} className={`${input} resize-y`} placeholder="Optional details about the property" /></Field><Field label="Customer requirements"><textarea rows="2" value={project.customer_requirements || ''} onChange={(event) => updateProject('customer_requirements', event.target.value)} className={`${input} resize-y`} placeholder="What should our team know?" /></Field><Field label="Additional comments"><textarea rows="2" value={project.customer_comments || ''} onChange={(event) => updateProject('customer_comments', event.target.value)} className={`${input} resize-y`} placeholder="Optional comments" /></Field></div>
     </section>
+
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold text-white">Areas / rooms</h2><p className="mt-1 text-sm text-slate-500">Optional details help us understand the work.</p></div><button type="button" onClick={addArea} className="rounded-xl border border-[#F5C518]/35 px-4 py-2 text-sm font-semibold text-[#F5C518] hover:bg-[#F5C518]/10">+ Add area</button></div>
+      <div className="mt-4 space-y-3"><AnimatePresence initial={false}>{areas.map((area, index) => <motion.div key={area.id || index} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-white">Area {String(index + 1).padStart(2, '0')}</h3><button type="button" onClick={() => remove('areas', index)} className="text-sm font-semibold text-slate-400 hover:text-red-300">Remove</button></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Room / area"><input value={area.name} onChange={event => update('areas', index, { name: event.target.value })} className={input} placeholder="e.g. Living room" /></Field><div className="grid grid-cols-[1fr_110px] gap-3"><Field label="Size"><input type="number" min="1" value={area.size} onChange={event => update('areas', index, { size: event.target.value })} className={input} placeholder="Optional" /></Field><Field label="Unit"><select value={area.unit || 'sqm'} onChange={event => update('areas', index, { unit: event.target.value })} className={input}><option value="sqm">sqm</option><option value="sq ft">sq ft</option></select></Field></div><Field label="Quantity"><input type="number" min="1" value={area.quantity || 1} onChange={event => update('areas', index, { quantity: Math.max(1, Number(event.target.value) || 1) })} className={input} /></Field><Field label="Notes"><input value={area.notes || ''} onChange={event => update('areas', index, { notes: event.target.value })} className={input} placeholder="Optional details" /></Field></div></motion.div>)}</AnimatePresence></div>
+      {filledAreas.length > 0 && <div className="mt-4 rounded-xl border border-white/[.07] bg-white/[.02] p-4"><p className="text-sm font-bold text-white">{filledAreas.length} {filledAreas.length === 1 ? 'area' : 'areas'} added</p><div className="mt-2 space-y-1">{filledAreas.map((area, index) => <p key={`${area.id || index}-summary`} className="text-sm text-slate-400">{area.name}{area.size ? ` — ${area.size} ${area.unit || 'sqm'}` : ''}{Number(area.quantity) > 1 ? ` · Qty ${area.quantity}` : ''}</p>)}</div></div>}
+    </section>
+
     <section className="border-t border-white/[.07] pt-6">
-      <div className="flex items-center justify-between gap-4"><div><h2 className="text-lg font-bold text-white">Equipment / items</h2><p className="mt-1 text-sm text-slate-500">Optional items or equipment preferences.</p></div><button type="button" onClick={addItem} className="rounded-xl border border-[#F5C518]/35 px-4 py-2 text-sm font-semibold text-[#F5C518] hover:bg-[#F5C518]/10">+ Add item</button></div>
-      <div className="mt-4 space-y-4">{items.map((item, index) => <div key={index} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-white">Item {String(index + 1).padStart(2, '0')}</h3><button type="button" onClick={() => remove('items', index)} className="text-sm font-semibold text-red-300 hover:text-red-200">Remove</button></div><div className="grid gap-4 md:grid-cols-2"><Field label="Item name"><input value={item.name} onChange={e => update('items', index, { name: e.target.value })} className={input} placeholder="e.g. CCTV camera"/></Field><Field label="Quantity"><input type="number" min="1" value={item.quantity} onChange={e => update('items', index, { quantity: Math.max(1, Number(e.target.value) || 1) })} className={input}/></Field><Field label="Description"><input value={item.description} onChange={e => update('items', index, { description: e.target.value })} className={input} placeholder="Optional details"/></Field><Field label="Customer comment"><input value={item.comment} onChange={e => update('items', index, { comment: e.target.value })} className={input} placeholder="Your preference or request"/></Field></div></div>)}</div>
+      <h2 className="text-lg font-bold text-white">{isEquipmentService ? 'Equipment / system requirements' : 'Additional items or requirements'}</h2>
+      <p className="mt-1 text-sm text-slate-500">Would you like to add equipment or additional items?</p>
+      <div className="mt-4 flex flex-wrap gap-3"><button type="button" aria-pressed={formData.include_items === true} onClick={() => set({ include_items: true })} className={`rounded-xl border px-4 py-2.5 text-sm font-semibold ${formData.include_items ? 'border-[#F5C518]/50 bg-[#F5C518]/10 text-[#F5C518]' : 'border-white/10 text-slate-300 hover:border-white/20'}`}>Yes, add items</button><button type="button" aria-pressed={formData.include_items !== true} onClick={() => { set({ include_items: false, items: [] }); onContinue(); }} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:border-white/20">No, continue</button></div>
+      {formData.include_items && <div className="mt-5"><div className="space-y-3"><AnimatePresence initial={false}>{items.map((item, index) => <motion.div key={item.id || index} layout initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="rounded-2xl border border-white/[.08] bg-white/[.03] p-4"><div className="mb-4 flex items-center justify-between"><h3 className="font-bold text-white">Item {String(index + 1).padStart(2, '0')}</h3><button type="button" onClick={() => remove('items', index)} className="text-sm font-semibold text-slate-400 hover:text-red-300">Remove</button></div><div className="grid gap-4 sm:grid-cols-2"><Field label="Item name"><input value={item.name} onChange={event => update('items', index, { name: event.target.value })} className={input} placeholder="Item or equipment" /></Field><Field label="Quantity"><input type="number" min="1" value={item.quantity || 1} onChange={event => update('items', index, { quantity: Math.max(1, Number(event.target.value) || 1) })} className={input} /></Field><Field label="Description"><input value={item.description || ''} onChange={event => update('items', index, { description: event.target.value })} className={input} placeholder="Optional details" /></Field><Field label="Customer request"><input value={item.comment || ''} onChange={event => update('items', index, { comment: event.target.value })} className={input} placeholder="Optional preference" /></Field></div></motion.div>)}</AnimatePresence></div><button type="button" onClick={addItem} className="mt-4 rounded-xl border border-[#F5C518]/35 px-4 py-2.5 text-sm font-semibold text-[#F5C518] hover:bg-[#F5C518]/10">+ Add another item</button></div>}
+      {formData.include_items && <button type="button" onClick={onContinue} className="mt-6 rounded-2xl bg-[#F5C518] px-6 py-3.5 text-sm font-black text-[#0A1120] hover:bg-[#FFD43B]">Continue to location <ArrowRight size={16} className="ml-2 inline" /></button>}
     </section>
   </div>;
 };
@@ -127,26 +164,53 @@ function ServiceFormUI({
   onContinue, 
   step, 
   onStepChange, 
-  bookedDates = [], 
-  bookedTimes = [] 
+  bookedAppointmentsByDate = {},
+  availabilityLoading = false,
+  availabilityError = false,
 }) {
-  const [region, setRegion] = useState('');
-  const [city, setCity] = useState('');
-  const [barangay, setBarangay] = useState('');
-  const [street, setStreet] = useState('');
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const selectedDate = formData.date ? new Date(`${formData.date}T00:00:00`) : new Date();
+    return new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+  });
   const [dragging, setDragging] = useState(false);
-  
+
+  const region = formData.location_region || '';
+  const city = formData.location_city || '';
+  const barangay = formData.location_barangay || '';
+  const street = formData.location_street || '';
   const receipt = useRef(null);
   const set = data => setFormData(previous => ({ ...previous, ...data }));
 
   useEffect(() => {
     const address = [street, barangay, city, region].filter(Boolean).join(', ');
-    if (!address) return;
+    if (!address || address === formData.appointment_address) return;
     setFormData(previous => ({
       ...previous,
       appointment_address: address,
     }));
-  }, [region, city, barangay, street, setFormData]);
+  }, [region, city, barangay, street, formData.appointment_address, setFormData]);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const monthDayCount = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0).getDate();
+  const calendarCells = Array.from({ length: monthStart.getDay() + monthDayCount }, (_, index) =>
+    index < monthStart.getDay() ? null : new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), index - monthStart.getDay() + 1)
+  );
+  const monthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const occupiedSlots = new Set((bookedAppointmentsByDate[formData.date] || []).map(normalizeTime));
+  const referenceNumber = String(formData.reference_number || '');
+  const referenceNumberError = referenceNumber && !/^\d+$/.test(referenceNumber)
+    ? 'Numbers only. Letters and symbols are not allowed.'
+    : referenceNumber.length !== 11
+      ? `Enter exactly 11 digits (${referenceNumber.length}/11).`
+      : '';
+  const referenceNumberValid = /^\d{11}$/.test(referenceNumber);
+  const selectedDateLabel = formData.date
+    ? new Date(`${formData.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+  const previousMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  const previousMonthDisabled = previousMonth < new Date(today.getFullYear(), today.getMonth(), 1);
 
   const total = Number(formData.price || 0);
   const due = Number(formData.actual_paid_amount || 0);
@@ -207,10 +271,19 @@ function ServiceFormUI({
       {step === 3 && (
         <motion.section key="areas" {...panel} className={shell}>
           <p className="text-sm font-semibold text-[#F5C518]">Step 3 of 7</p>
-          <h1 className="mt-2 text-2xl font-black text-white md:text-3xl">Tell us about the space</h1>
-          <p className="mt-2 text-sm text-slate-400">Add the rooms or areas that need service so our team can better understand the work.</p>
-          <AreaEditor formData={formData} set={set} />
-          <Nav back={() => onStepChange(2)} next={() => onStepChange(4)} />
+          <h1 className="mt-2 text-2xl font-black text-white md:text-3xl">Tell us about your space</h1>
+          {!formData.project_details_enabled ? <>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-400">A few project details can help our team prepare for your service. You can skip this if they are not needed.</p>
+            <div className="mt-7 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={() => set({ project_details_enabled: true })} className="rounded-2xl border border-[#F5C518]/35 bg-[#F5C518]/[.06] p-5 text-left transition hover:border-[#F5C518]/60 hover:bg-[#F5C518]/[.1]"><span className="block text-sm font-black text-[#F5C518]">Add project details</span><span className="mt-1 block text-xs text-slate-400">Property overview, areas, and optional items</span></button>
+              <button type="button" onClick={() => onStepChange(4)} className="rounded-2xl border border-white/10 bg-white/[.025] p-5 text-left transition hover:border-white/20"><span className="block text-sm font-black text-white">Skip for now</span><span className="mt-1 block text-xs text-slate-400">Continue directly to the service location</span></button>
+            </div>
+            <Nav back={() => onStepChange(2)} next={() => onStepChange(4)} />
+          </> : <>
+            <p className="mt-2 text-sm text-slate-400">Share any details that will help our team understand the work.</p>
+            <AreaEditor formData={formData} set={set} selectedService={selectedService} onContinue={() => onStepChange(4)} />
+            <Nav back={() => onStepChange(2)} next={() => onStepChange(4)} />
+          </>}
         </motion.section>
       )}
 
@@ -220,34 +293,34 @@ function ServiceFormUI({
           <h1 className="mt-2 text-2xl font-black text-white md:text-3xl">Where is the service needed?</h1>
           <p className="mt-2 text-sm text-slate-400">Enter the location where our team will provide the service.</p>
           
-          <div className="mt-7 grid gap-5 md:grid-cols-3">
+          <div className="mt-7"><p className="mb-3 text-xs font-bold uppercase tracking-[.16em] text-[#F5C518]">01 — Area</p><div className="grid gap-5 md:grid-cols-3">
             <Field label="Region">
-              <select value={region} onChange={e => { setRegion(e.target.value); setCity(''); setBarangay(''); }} className={input}>
+              <select value={region} onChange={e => set({ location_region: e.target.value, location_city: '', location_barangay: '' })} className={input}>
                 <option value="">Select region</option>
                 {Object.keys(places).map(value => <option key={value}>{value}</option>)}
               </select>
             </Field>
             <Field label="City / Province">
-              <select disabled={!region} value={city} onChange={e => { setCity(e.target.value); setBarangay(''); }} className={input}>
+              <select disabled={!region} value={city} onChange={e => set({ location_city: e.target.value, location_barangay: '' })} className={input}>
                 <option value="">Select city</option>
                 {region && Object.keys(places[region]).map(value => <option key={value}>{value}</option>)}
               </select>
             </Field>
             <Field label="Barangay / Area">
-              <select disabled={!city} value={barangay} onChange={e => setBarangay(e.target.value)} className={input}>
+              <select disabled={!city} value={barangay} onChange={e => set({ location_barangay: e.target.value })} className={input}>
                 <option value="">Select barangay</option>
                 {city && places[region][city].map(value => <option key={value}>{value}</option>)}
               </select>
             </Field>
-          </div>
+          </div></div>
 
-          <div className="mt-5">
+          <div className="mt-6"><p className="mb-3 text-xs font-bold uppercase tracking-[.16em] text-[#F5C518]">02 — Exact location</p>
             <Field label="Street / complete address">
-              <input value={street} onChange={e => setStreet(e.target.value)} className={input} placeholder="House number, street, landmark" />
+              <input value={street} onChange={e => set({ location_street: e.target.value })} className={input} placeholder="House number, street, landmark" />
             </Field>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-6"><p className="mb-3 text-xs font-bold uppercase tracking-[.16em] text-[#F5C518]">03 — Access information</p>
             <Field label="Special instructions">
               <textarea
                 rows="3"
@@ -260,11 +333,11 @@ function ServiceFormUI({
             </Field>
           </div>
 
-          {formData.appointment_address && (
+          {region && city && barangay && street.trim() && (
             <div className="mt-5 flex gap-3 rounded-2xl border border-[#F5C518]/20 bg-[#F5C518]/[.05] p-4">
               <MapPin className="shrink-0 text-[#F5C518]" size={18} />
               <div>
-                <p className="text-sm font-semibold text-white">Service location</p>
+                <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#F5C518]">Service location</p>
                 <p className="mt-1 text-sm text-slate-400">{formData.appointment_address}</p>
               </div>
             </div>
@@ -277,49 +350,42 @@ function ServiceFormUI({
       {step === 5 && (
         <motion.section key="schedule" {...panel} className={shell}>
           <p className="text-sm font-semibold text-[#F5C518]">Step 5 of 7</p>
-          <h1 className="mt-2 text-2xl font-black text-white md:text-3xl">When should we come?</h1>
+          <h1 className="mt-2 text-2xl font-black uppercase tracking-wide text-white md:text-3xl">When should we come?</h1>
           <p className="mt-2 text-sm text-slate-400">Choose a date and an available time.</p>
           
-          <div className="mt-7 max-w-md">
-            <Field label="Preferred date">
-              <DatePicker 
-                selected={formData.date ? new Date(formData.date + 'T00:00:00') : null} 
-                onChange={date => set({ date: date.toISOString().slice(0, 10), time: '' })} 
-                excludeDates={bookedDates.map(date => new Date(date + 'T00:00:00'))} 
-                minDate={new Date()} 
-                placeholderText="Select an available date" 
-                className={input} 
-              />
-            </Field>
+          <div className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)]">
+            <section className="rounded-2xl border border-white/[.08] bg-white/[.02] p-4 sm:p-5" aria-label="Appointment calendar">
+              <div className="flex items-center justify-between gap-3 border-b border-white/[.07] pb-4">
+                <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setCalendarMonth(previousMonth)} className="rounded-xl border border-white/10 p-2.5 text-slate-300 hover:border-[#F5C518]/40 hover:text-[#F5C518] disabled:cursor-not-allowed disabled:opacity-30"><ArrowLeft size={16} /></button>
+                <h2 className="text-base font-black text-white sm:text-lg">{monthLabel}</h2>
+                <button type="button" aria-label="Next month" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="rounded-xl border border-white/10 p-2.5 text-slate-300 hover:border-[#F5C518]/40 hover:text-[#F5C518]"><ArrowRight size={16} /></button>
+              </div>
+              <div className="mt-4 grid grid-cols-7 gap-1 text-center">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{day}</span>)}</div>
+              <AnimatePresence mode="wait" initial={false}><motion.div key={`${calendarMonth.getFullYear()}-${calendarMonth.getMonth()}`} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: .16 }} className="grid grid-cols-7 gap-1">
+                {calendarCells.map((date, index) => {
+                  if (!date) return <span key={`blank-${index}`} />;
+                  const key = dateKey(date);
+                  const past = date < today;
+                  const full = timeSlots.every((slot) => (bookedAppointmentsByDate[key] || []).map(normalizeTime).includes(slot));
+                  const selected = formData.date === key;
+                  const disabled = past || full;
+                  const stateLabel = past ? 'Past date' : full ? 'Fully booked' : selected ? 'Selected' : 'Available';
+                  return <button key={key} type="button" disabled={disabled} aria-label={`${date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}, ${stateLabel}`} aria-pressed={selected} onClick={() => set({ date: key, time: '' })} className={`relative min-h-11 rounded-xl border text-sm font-bold transition sm:min-h-12 ${selected ? 'border-[#F5C518] bg-[#F5C518] text-[#0A1120]' : full ? 'cursor-not-allowed border-white/[.04] bg-white/[.015] text-slate-700 line-through' : past ? 'cursor-not-allowed border-transparent text-slate-700' : 'border-transparent text-slate-300 hover:border-[#F5C518]/40 hover:bg-[#F5C518]/[.06]'}`}><span>{date.getDate()}</span>{!past && <span className={`absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${selected ? 'bg-[#0A1120]' : full ? 'bg-slate-700' : 'bg-[#F5C518]/70'}`} />}</button>;
+                })}
+              </motion.div></AnimatePresence>
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/[.07] pt-4 text-[11px] text-slate-400"><span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-[#F5C518]" />Available</span><span className="flex items-center gap-2"><i className="h-2 w-2 rounded-full bg-slate-700" />Fully booked</span><span>Past dates cannot be selected</span></div>
+              {availabilityLoading && <p className="mt-3 text-xs text-slate-500">Checking current appointment availability…</p>}
+              {availabilityError && <p className="mt-3 text-xs text-amber-300">Availability could not be refreshed. We will check again before you submit.</p>}
+            </section>
+
+            <section className="rounded-2xl border border-white/[.08] bg-white/[.02] p-4 sm:p-5">
+              <h2 className="text-base font-black text-white">Available times</h2>
+              <p className="mt-1 text-sm text-slate-500">{formData.date ? 'Choose an open time for your selected date.' : 'Select a date to view its available times.'}</p>
+              <div className="mt-5 space-y-5">{Object.entries(groups).map(([group, slots]) => <div key={group}><h3 className="text-[10px] font-bold uppercase tracking-[.16em] text-slate-500">{group}</h3><div className="mt-2 grid grid-cols-2 gap-2">{slots.map((slot) => { const unavailable = occupiedSlots.has(normalizeTime(slot)); const selected = formData.time === slot; return <button key={slot} type="button" disabled={!formData.date || unavailable} aria-pressed={selected} onClick={() => set({ time: slot })} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${selected ? 'border-[#F5C518] bg-[#F5C518] text-[#0A1120]' : unavailable ? 'cursor-not-allowed border-white/[.04] bg-white/[.015] text-slate-600 line-through' : 'border-white/10 bg-white/[.03] text-slate-300 hover:border-[#F5C518]/40'}`}>{slot}{unavailable && <span className="ml-1 text-[10px] no-underline">Booked</span>}</button>; })}</div></div>)}</div>
+            </section>
           </div>
 
-          <div className="mt-7">
-            <h2 className="text-base font-bold text-white">Available times</h2>
-            <p className="mt-1 text-sm text-slate-500">Unavailable times are disabled.</p>
-            <div className="mt-5 space-y-5">
-              {Object.entries(groups).map(([group, slots]) => (
-                <div key={group}>
-                  <h3 className="text-sm font-semibold text-slate-400">{group}</h3>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                    {slots.map(slot => { 
-                      const unavailable = bookedTimes.includes(slot);
-                      const selected = formData.time === slot; 
-                      return (
-                        <button 
-                          key={slot} 
-                          disabled={unavailable || !formData.date} 
-                          onClick={() => set({ time: slot })} 
-                          className={'rounded-xl border px-3 py-3 text-sm font-semibold transition ' + (selected ? 'border-[#F5C518] bg-[#F5C518] text-[#0A1120]' : unavailable ? 'cursor-not-allowed border-red-500/15 bg-red-500/[.04] text-slate-700 line-through' : 'border-white/10 bg-white/[.03] text-slate-300 hover:border-[#F5C518]/40')}
-                        >
-                          {slot}
-                        </button>
-                      ); 
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {formData.date && formData.time && <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-5 rounded-2xl border border-[#F5C518]/20 bg-[#F5C518]/[.05] p-5"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#F5C518]">Your appointment</p><p className="mt-2 text-lg font-black text-white">{selectedDateLabel}</p><p className="mt-1 text-sm font-semibold text-slate-300">{formData.time} <span className="font-normal text-slate-500">· Appointment time</span></p></motion.div>}
 
           <Nav back={() => onStepChange(4)} next={() => onStepChange(6)} disabled={!formData.date || !formData.time} />
         </motion.section>
@@ -387,7 +453,22 @@ function ServiceFormUI({
               </div>
             </div>
             <Field label="GCash reference number">
-              <input value={formData.reference_number} onChange={e => set({ reference_number: e.target.value })} className={input} placeholder="Enter reference number" />
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{11}"
+                autoComplete="off"
+                spellCheck="false"
+                value={referenceNumber}
+                onChange={event => set({ reference_number: event.target.value })}
+                className={`${input} ${referenceNumberError ? 'border-amber-400/50 focus:border-amber-400' : ''}`}
+                placeholder="Enter 11-digit reference number"
+                aria-invalid={Boolean(referenceNumberError)}
+                aria-describedby="gcash-reference-warning"
+              />
+              <p id="gcash-reference-warning" aria-live="polite" className={`mt-1 text-xs ${referenceNumberError ? 'text-amber-300' : 'text-slate-500'}`}>
+                {referenceNumberError || 'Use exactly 11 numbers.'}
+              </p>
             </Field>
           </div>
 
@@ -425,7 +506,7 @@ function ServiceFormUI({
           <Nav 
             back={() => onStepChange(5)} 
             next={onContinue} 
-            disabled={uploadingReceipt || !formData.payment_method || !formData.reference_number || !formData.receipt_url} 
+            disabled={uploadingReceipt || !formData.payment_method || !referenceNumberValid || !formData.receipt_url}
             label="Review request" 
           />
         </motion.section>

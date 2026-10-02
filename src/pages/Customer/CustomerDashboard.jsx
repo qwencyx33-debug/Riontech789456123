@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../supabaseClient';
+import { useVisibleRefresh } from '../../hooks/useVisibleRefresh';
 import {
   ShieldCheck, PlusCircle, Clock, ChevronRight, Bell,
   Calendar, LayoutGrid, Settings, CreditCard, History, LogOut,
@@ -497,7 +498,7 @@ const ServiceReportCard = ({ report }) => {
   );
 };
 
-const PaymentSummaryCard = ({ appointment, onPayRemaining }) => {
+const PaymentSummaryCard = ({ appointment, onPayRemaining, priority = false }) => {
   if (!appointment) return null;
   const total = Number(appointment.price || 0);
   const status = (appointment.payment_status || 'pending').toLowerCase();
@@ -508,8 +509,9 @@ const PaymentSummaryCard = ({ appointment, onPayRemaining }) => {
   return (
     <div className="bg-[#080e1c]/80 backdrop-blur-xl border border-white/[0.08] rounded-[1.75rem] p-5">
       <h3 className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-300/80 flex items-center gap-2 mb-4">
-        <Wallet size={12} className="text-amber-400" /> Payment Summary
+        <Wallet size={12} className="text-amber-400" /> {priority ? (isAwaitingCashierVerification(appointment) ? 'Payment Submitted' : 'Payment Required') : 'Payment Summary'}
       </h3>
+      {priority && <div className="mb-4"><p className="text-sm font-bold text-white">{appointment.service_type || 'Completed service'}</p><p className="mt-1 text-xs leading-relaxed text-slate-400">{isAwaitingCashierVerification(appointment) ? 'Your payment proof has been submitted and is waiting for cashier verification.' : isPaymentRejected(appointment) ? 'Your payment needs attention. Submit your payment proof again.' : 'Your service has been completed. Pay the remaining balance to finish your payment.'}</p></div>}
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="text-xs text-slate-500">Total</span>
@@ -732,6 +734,32 @@ const CurrentAppointmentCard = ({ appointment, onView }) => {
       </div>
     </motion.section>
   );
+};
+
+const CustomerUpcomingAppointments = ({ appointments, onOpen }) => {
+  const now = new Date();
+  const upcoming = appointments.map((appointment) => {
+    if (!appointment.schedule_date) return null;
+    const at = new Date(`${appointment.schedule_date}T00:00:00`);
+    if (Number.isNaN(at.getTime())) return null;
+    const time = String(appointment.appointment_time || '').trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (time) {
+      let hours = Number(time[1]);
+      if (time[3]) { hours %= 12; if (time[3].toUpperCase() === 'PM') hours += 12; }
+      at.setHours(hours, Number(time[2]), 0, 0);
+    }
+    return { appointment, at };
+  }).filter((entry) => entry && entry.at > now)
+    .sort((a, b) => a.at - b.at);
+  if (!upcoming.length) return null;
+  const [next, ...later] = upcoming;
+  return <section className="rounded-2xl border border-white/10 bg-[#080e1c]/90 p-5">
+    <p className="text-xs font-bold uppercase tracking-[.16em] text-amber-300">Next appointment</p>
+    <button type="button" onClick={() => onOpen(next.appointment)} className="mt-3 flex w-full items-center justify-between gap-4 text-left">
+      <span className="min-w-0"><span className="block truncate text-base font-bold text-white">{next.appointment.service_type || 'Service appointment'}</span><span className="mt-1 block text-sm text-slate-400">{next.at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {next.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span></span><ChevronRight size={17} className="shrink-0 text-amber-300" />
+    </button>
+    {later.length > 0 && <div className="mt-4 border-t border-white/[.07] pt-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">Upcoming appointments</p><div className="space-y-1">{later.map(({ appointment, at }) => <button key={appointment.id} type="button" onClick={() => onOpen(appointment)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/[.04]"><span className="min-w-0 truncate text-sm text-slate-300">{appointment.service_type || 'Service appointment'}</span><span className="shrink-0 text-xs text-slate-500">{at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span></button>)}</div></div>}
+  </section>;
 };
 
 const FinalPaymentModal = ({ appointment, onClose, onSubmitted, onError }) => {
@@ -1204,6 +1232,7 @@ const CustomerDashboard = ({ userEmail }) => {
   });
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [myAppointments, setMyAppointments] = useState([]);
+  const [customerUserId, setCustomerUserId] = useState(null);
   const [technicians, setTechnicians] = useState({});       
   const [managerNotes, setManagerNotes] = useState({});      
   const [qcReports, setQcReports] = useState({});            
@@ -1230,18 +1259,19 @@ const CustomerDashboard = ({ userEmail }) => {
   const [logoutPhase, setLogoutPhase] = useState('confirm'); 
 
   
-  const fetchUserData = useCallback(async () => {
-    setLoading(true);
+  const fetchUserData = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) { setMyAppointments([]); setLoading(false); return; }
+      if (!user?.id) { setMyAppointments([]); if (!background) setLoading(false); return; }
       const { data: profileData, error: profileError } = await supabase
         .from('profiles').select('*').eq('id', user.id).maybeSingle();
       if (profileError) throw profileError;
       if (profileData) setProfile(profileData);
 
       const userId = user.id;
-      if (!userId) { setMyAppointments([]); setLoading(false); return; }
+      setCustomerUserId(userId);
+      if (!userId) { setMyAppointments([]); if (!background) setLoading(false); return; }
 
       const { data: appts, error } = await supabase
         .from('appointments')
@@ -1302,22 +1332,27 @@ const CustomerDashboard = ({ userEmail }) => {
     } catch (err) {
       console.error('Fetch error:', err);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [userEmail]);
 
   useEffect(() => { fetchUserData(); }, [fetchUserData]);
+  useVisibleRefresh(() => fetchUserData(true));
 
   
   useEffect(() => {
+    if (!customerUserId) return undefined;
     const channel = supabase
       .channel('customer-dashboard-appointments')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => {
-        fetchUserData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `user_id=eq.${customerUserId}` }, () => fetchUserData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchUserData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'manager_notes' }, () => fetchUserData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'qc_reports' }, () => fetchUserData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_photos' }, () => fetchUserData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_reports' }, () => fetchUserData(true))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchUserData]);
+  }, [customerUserId, fetchUserData]);
 
   
   const activeRequests = useMemo(
@@ -1338,6 +1373,13 @@ const CustomerDashboard = ({ userEmail }) => {
   }, [activeRequests]);
   const unreadCount = activeRequests.length;
   const lastCompleted = completedAppointments[0] || null;
+  const paymentPriorityAppointment = useMemo(() => {
+    const withBalance = myAppointments.filter((appointment) => ['completed', 'awaiting_final_payment'].includes((appointment.status || '').toLowerCase()) && getBalanceDue(appointment) > 0);
+    return withBalance.find((appointment) => canSubmitFinalPayment(appointment))
+      || withBalance.find((appointment) => isAwaitingCashierVerification(appointment))
+      || null;
+  }, [myAppointments]);
+  const otherUpcomingAppointments = useMemo(() => activeRequests.filter((appointment) => appointment.id !== latestActive?.id), [activeRequests, latestActive]);
 
   
   const recentHistory = useMemo(
@@ -1505,9 +1547,21 @@ const CustomerDashboard = ({ userEmail }) => {
               )}
 
               {}
+              {!loading && paymentPriorityAppointment && (
+                <div className="mb-5">
+                  <PaymentSummaryCard priority appointment={paymentPriorityAppointment} onPayRemaining={setFinalPaymentAppointment} />
+                </div>
+              )}
+
               {!loading && latestActive && (
                 <div className="mb-5">
                   <CurrentAppointmentCard appointment={latestActive} onView={() => openDetails(latestActive)} />
+                </div>
+              )}
+
+              {!loading && otherUpcomingAppointments.length > 0 && (
+                <div className="mb-5">
+                  <CustomerUpcomingAppointments appointments={otherUpcomingAppointments} onOpen={openDetails} />
                 </div>
               )}
 

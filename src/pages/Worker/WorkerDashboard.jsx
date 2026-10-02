@@ -7,6 +7,7 @@ import {
   Phone, User, Wrench, History, TrendingUp, Navigation, Sparkles, Package, ImagePlus, Sun, Moon
 } from 'lucide-react';
 import { supabase } from '../../supabaseClient';
+import { useVisibleRefresh } from '../../hooks/useVisibleRefresh';
 import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
 
 import DeploymentsView from './DeploymentsView';
@@ -473,7 +474,7 @@ function MissionControl({ job, tasks, details, checklist, related, loading, acti
   return <div className="space-y-4">
     <GlassCard hover={false} glow className="overflow-hidden p-5 md:p-6"><div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start"><div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[.2em] text-amber-300">Today's assignment</p><h1 className="mt-2 text-2xl font-bold text-white md:text-3xl">{job.service_type || 'Service appointment'}</h1><p className="mt-1 text-lg font-medium text-slate-200">{job.full_name || 'Customer'}</p><div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-300"><span className="flex items-center gap-1.5"><Clock size={14} className="text-amber-300" />{job.schedule_date || 'Date to be confirmed'} · {job.appointment_time || 'Time to be confirmed'}</span><span className="flex items-center gap-1.5"><MapPin size={14} className="text-amber-300" />{job.address || 'Location not provided'}</span></div></div><StatusBadge status={job.status} /></div><div className="mt-5 border-t border-white/[.06] pt-4"><JobProgressTimeline job={job} reportSubmitted={!!report} /></div></GlassCard>
     <div className="grid gap-4 xl:grid-cols-[1.35fr_.65fr]"><GlassCard hover={false} className="border-amber-400/25 bg-amber-400/[.055] p-5"><p className="text-xs font-semibold uppercase tracking-[.18em] text-amber-300">Next action</p><div className="mt-2 flex items-end justify-between gap-4"><div><h2 className="text-xl font-bold text-white">{next.label}</h2><p className="mt-1 text-sm text-slate-300">{next.detail}</p></div>{next.onClick && <PrimaryButton loading={actionLoading} icon={NextIcon} onClick={next.onClick}>{next.label}</PrimaryButton>}</div></GlassCard><GlassCard hover={false} className="p-5"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Service status</p><div className="mt-3 grid grid-cols-3 gap-2 text-center"><div><p className="text-lg font-bold text-white">{photoCount}</p><p className="text-xs text-slate-400">Photos</p></div><div><p className="text-lg font-bold text-white">{report ? 'Yes' : 'No'}</p><p className="text-xs text-slate-400">Report</p></div><div><p className="text-lg font-bold text-amber-300">{job.qc_status || '—'}</p><p className="text-xs text-slate-400">QC</p></div></div></GlassCard></div>
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]"><GlassCard hover={false} className="p-5"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Project at a glance</p><GhostButton className="px-3 py-2 text-xs" onClick={onOpenDetails} icon={ChevronRight}>Full details</GhostButton></div>{loading ? <p className="mt-4 text-sm text-slate-400">Loading project details…</p> : facts.length ? <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{facts.map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold text-slate-100">{value}</p></div>)}</div> : <p className="mt-4 text-sm text-slate-400">No project details provided.</p>}</GlassCard><GlassCard hover={false} className="p-5">{note ? <><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-300"><MessageSquare size={13} /> Manager instruction</p><p className="mt-3 text-sm leading-relaxed text-slate-200">{note}</p></> : <><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Manager instruction</p><p className="mt-3 text-sm text-slate-400">No manager instructions.</p></>}</GlassCard></div>
+    <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]"><GlassCard hover={false} className="p-5"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Project at a glance</p><GhostButton className="px-3 py-2 text-xs" onClick={onOpenDetails} icon={ChevronRight}>Full details</GhostButton></div>{loading ? <p className="mt-4 text-sm text-slate-400">Loading project details…</p> : <><div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{facts.map(([label, value]) => <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold text-slate-100">{value}</p></div>)}</div>{(related.areas?.length > 0 || related.items?.length > 0) && <div className="mt-4 grid gap-3 sm:grid-cols-2">{related.areas?.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Areas</p><p className="mt-1 text-sm text-slate-200">{related.areas.map((area) => area.area_name || area.name).filter(Boolean).join(' · ')}</p></div>}{related.items?.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Required items</p><p className="mt-1 text-sm text-slate-200">{related.items.map((item) => `${item.item_name || item.name || 'Item'} × ${item.quantity || 1}`).join(' · ')}</p></div>}</div>}{!facts.length && !related.areas?.length && !related.items?.length && <p className="mt-4 text-sm text-slate-400">No project details provided.</p>}</>}</GlassCard><GlassCard hover={false} className="p-5">{note ? <><p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-300"><MessageSquare size={13} /> Manager instruction</p><p className="mt-3 text-sm leading-relaxed text-slate-200">{note}</p></> : <><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Manager instruction</p><p className="mt-3 text-sm text-slate-400">No manager instructions.</p></>}</GlassCard></div>
     <div className="flex flex-wrap gap-3"><PrimaryButton icon={ChevronRight} onClick={onOpenDetails}>View job</PrimaryButton><GhostButton icon={Navigation} onClick={onNavigate}>Navigate</GhostButton><GhostButton icon={ImagePlus} onClick={onOpenJobs}>Photos & report</GhostButton><GhostButton icon={Package} onClick={onOpenDetails}>Areas & required items</GhostButton></div>
   </div>;
 }
@@ -706,6 +707,63 @@ function TodayTimeline({ tasks, activeJob }) {
       </div>
     </GlassCard>
   );
+}
+
+function scheduledAt(job) {
+  if (!job?.schedule_date) return null;
+  const date = new Date(`${job.schedule_date}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return null;
+  const time = String(job.appointment_time || '').trim();
+  const match = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match) {
+    let hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (match[3]) {
+      hours %= 12;
+      if (match[3].toUpperCase() === 'PM') hours += 12;
+    }
+    date.setHours(hours, minutes, 0, 0);
+  }
+  return date;
+}
+
+function TechnicianSchedule({ tasks, currentJob, onView }) {
+  const now = new Date();
+  const upcoming = [...tasks]
+    .filter((job) => !['completed', 'cancelled', 'rejected'].includes((job.status || '').toLowerCase()))
+    .filter((job) => job.id !== currentJob?.id)
+    .map((job) => ({ job, at: scheduledAt(job) }))
+    .filter(({ at }) => at && at > now)
+    .sort((a, b) => a.at - b.at);
+  const next = upcoming[0];
+  const grouped = upcoming.slice(1).reduce((groups, entry) => {
+    const key = entry.at.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+    (groups[key] ||= []).push(entry);
+    return groups;
+  }, {});
+  const dateTime = (date) => `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+
+  if (!upcoming.length) return null;
+  return <div className="grid gap-4 lg:grid-cols-2">
+    {next && <GlassCard hover={false} className="border-amber-400/25 bg-amber-400/[.045] p-5">
+      <p className="text-xs font-semibold uppercase tracking-[.18em] text-amber-300">Up next</p>
+      <h2 className="mt-3 text-lg font-bold text-white">{next.job.service_type || 'Service appointment'}</h2>
+      <p className="mt-1 text-sm text-slate-300">{next.job.full_name || 'Customer'}</p>
+      <p className="mt-3 flex items-center gap-2 text-sm text-slate-300"><Clock size={14} className="text-amber-300" />{dateTime(next.at)}</p>
+      <p className="mt-2 flex items-center gap-2 text-sm text-slate-400"><MapPin size={14} className="text-amber-300" />{next.job.address || 'Location not provided'}</p>
+      <button type="button" onClick={() => onView(next.job)} className="mt-4 rounded-xl border border-amber-400/25 px-4 py-2 text-xs font-bold text-amber-300 hover:bg-amber-400/10">View details</button>
+    </GlassCard>}
+    {Object.keys(grouped).length > 0 && <GlassCard hover={false} className="p-5">
+      <p className="text-xs font-semibold uppercase tracking-[.18em] text-slate-300">Upcoming appointments</p>
+      <div className="mt-3 max-h-56 space-y-4 overflow-y-auto pr-1">{Object.entries(grouped).map(([date, entries]) => <section key={date}>
+        <h3 className="mb-2 text-xs font-semibold text-amber-300">{date}</h3>
+        <div className="space-y-1.5">{entries.map(({ job, at }) => <button type="button" key={job.id} onClick={() => onView(job)} className="flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-2 text-left hover:bg-white/[.04]">
+          <span className="min-w-0 truncate text-sm text-slate-200">{at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · {job.service_type || 'Service'}</span>
+          <ChevronRight size={14} className="shrink-0 text-slate-500" />
+        </button>)}</div>
+      </section>)}</div>
+    </GlassCard>}
+  </div>;
 }
 
 function PerformancePanel({ tasks }) {
@@ -1284,9 +1342,9 @@ export default function TechnicianDashboard({ onLogout }) {
   }, [theme]);
 
   
-  const fetchTasks = useCallback(async (techId) => {
+  const fetchTasks = useCallback(async (techId, background = false) => {
     try {
-      setIsLoading(true);
+      if (!background) setIsLoading(true);
       const { data, error } = await supabase
         .from('appointments')
         .select('*')
@@ -1297,20 +1355,23 @@ export default function TechnicianDashboard({ onLogout }) {
     } catch (err) {
       console.error('Error fetching tasks:', err);
     } finally {
-      setIsLoading(false);
+      if (!background) setIsLoading(false);
     }
   }, []);
 
+  useVisibleRefresh(() => technicianId && fetchTasks(technicianId, true));
+
   useEffect(() => {
+    let active = true;
+    let channel;
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
+      if (active && user) {
         setTechnicianName(user.user_metadata?.full_name || 'Technician');
         setTechnicianId(user.id);
         fetchTasks(user.id);
 
-        
-        const channel = supabase
+        channel = supabase
           .channel('tech-assignments')
           .on('postgres_changes', {
             event: '*',
@@ -1328,15 +1389,17 @@ export default function TechnicianDashboard({ onLogout }) {
             setNotifications((prev) => [{ id: `${Date.now()}`, message, created_at: new Date().toISOString() }, ...prev].slice(0, 20));
           })
           .subscribe();
-
-        return () => supabase.removeChannel(channel);
       }
     };
     init();
+    return () => {
+      active = false;
+      if (channel) supabase.removeChannel(channel);
+    };
   }, [fetchTasks]);
 
   const activeJob = useMemo(
-    () => tasks.find((t) => t.status === 'in_progress') || tasks.find((t) => t.status === 'assigned'),
+    () => tasks.find((t) => (t.status || '').toLowerCase() === 'in_progress'),
     [tasks]
   );
 
@@ -1436,9 +1499,12 @@ export default function TechnicianDashboard({ onLogout }) {
         return <ServiceLogsView />;
       default:
         return (
-          <MissionControl job={activeJob} tasks={tasks} details={related.details} checklist={checklist} related={related} loading={relatedLoading} actionLoading={actionLoading}
-            onStart={() => updateJobStatus(activeJob, 'in_progress')} onComplete={() => updateJobStatus(activeJob, 'completed')}
-            onNavigate={() => handleNavigate(activeJob)} onOpenDetails={() => setDetailsOpen(true)} onOpenJobs={() => setActiveModule('assigned')} />
+          <div className="space-y-4">
+            <MissionControl job={activeJob} tasks={tasks} details={related.details} checklist={checklist} related={related} loading={relatedLoading} actionLoading={actionLoading}
+              onStart={() => updateJobStatus(activeJob, 'in_progress')} onComplete={() => updateJobStatus(activeJob, 'completed')}
+              onNavigate={() => handleNavigate(activeJob)} onOpenDetails={() => setDetailsOpen(true)} onOpenJobs={() => setActiveModule('assigned')} />
+            <TechnicianSchedule tasks={tasks} currentJob={activeJob} onView={(job) => { setMapJobId(job.id); setActiveModule('assigned'); }} />
+          </div>
         );
     }
   };
