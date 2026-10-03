@@ -23,6 +23,14 @@ const C = {
 const peso = n => `₱${(Number(n) || 0).toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
 const blank = v => v === null || v === undefined || v === '';
 const date = v => v ? new Date(v).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not provided';
+const getPaymentBreakdown = appointment => {
+  const total = Number(appointment.price) || 0;
+  const downpayment = Number(appointment.downpayment_paid) || 0;
+  const finalPayment = Math.max(total - downpayment, 0);
+  const totalPaid = Math.min(total, downpayment + finalPayment);
+  const remainingBalance = Math.max(total - totalPaid, 0);
+  return { total, downpayment, finalPayment, totalPaid, remainingBalance };
+};
 
 const Field = ({ label, value }) => (
   <div className="f">
@@ -38,7 +46,28 @@ const Section = ({ title, children }) => (
   </section>
 );
 
+function PaymentBreakdown({ payment, showBeforeFinal = false }) {
+  return (
+    <div className="payment-breakdown">
+      <div><span>Service Total</span><b>{peso(payment.total)}</b></div>
+      <div><span>Initial Payment</span><b>{peso(payment.downpayment)}</b></div>
+      {showBeforeFinal && <div><span>Remaining Before Final Payment</span><b>{peso(payment.finalPayment)}</b></div>}
+      <div className="final-payment"><span>{showBeforeFinal ? 'Final Payment Verified' : 'Final Payment'}</span><b>{peso(payment.finalPayment)}</b></div>
+      <div className="total-paid"><span>Total Paid</span><b>{peso(payment.totalPaid)}</b></div>
+      <div className="remaining-balance"><span>Remaining Balance</span><b>{peso(payment.remainingBalance)}</b></div>
+    </div>
+  );
+}
+
+const PaymentVerified = () => (
+  <div className="payment-verified" role="status">
+    <CheckCircle2 size={18} />
+    <div><b>Payment Verified · Fully Paid</b><span>Customer payment was submitted and verified by the cashier.</span></div>
+  </div>
+);
+
 function Card({ t, onOpen }) {
+  const payment = getPaymentBreakdown(t);
   const method = (t.payment_method || 'Cash');
   const I = method.toLowerCase().includes('gcash') 
     ? Smartphone 
@@ -58,22 +87,20 @@ function Card({ t, onOpen }) {
           <h2>{t.full_name || 'Customer'}</h2>
           <p>{t.service_type || 'Service'}</p>
         </div>
-        <em><CheckCircle2 size={13} />Paid</em>
+        <em><CheckCircle2 size={13} />VERIFIED</em>
       </header>
       <div className="meta">
         <span><Calendar size={14} />{date(t.schedule_date || t.completed_at)}</span>
         <span><MapPin size={14} />{t.address || 'Location not recorded'}</span>
       </div>
-      <strong>{peso(t.price)}</strong>
+      <PaymentBreakdown payment={payment} />
       <div className="method">
         <I size={15} />
         {method}
-        {(t.payment_ref || t.reference_number) && (
-          <small>REF: {t.payment_ref || t.reference_number}</small>
-        )}
+        <small>REF: {t.payment_ref || t.reference_number || 'Not provided'}</small>
       </div>
-      <p className="receipt">
-        {t.receipt_image ? '✓ Receipt available' : 'No receipt uploaded'}
+      <p className={`receipt ${t.receipt_image ? 'receipt-submitted' : ''}`}>
+        {t.receipt_image ? '✓ Receipt submitted' : 'No receipt uploaded'}
       </p>
       <button onClick={() => onOpen(t)}>
         View Transaction <ChevronRight size={16} />
@@ -122,7 +149,7 @@ function Modal({ t, onClose }) {
 
   const service = d.service || {};
   const project = d.project || {};
-  const due = Math.max(0, (Number(t.price) || 0) - (Number(t.downpayment_paid) || 0));
+  const payment = getPaymentBreakdown(t);
 
   const pages = [
     <Section title="Appointment details">
@@ -173,40 +200,38 @@ function Modal({ t, onClose }) {
       )}
     </Section>,
     <Section title="Payment summary">
-      <div className="grid">
-        <Field label="Total price" value={peso(t.price)} />
-        <Field label="Downpayment paid" value={peso(t.downpayment_paid)} />
-        <Field label="Amount paid" value={peso(t.price)} />
-        <Field label="Remaining balance" value={peso(due)} />
-        <Field label="Payment method" value={t.payment_method} />
-        <Field label="Payment reference" value={t.payment_ref} />
-        <Field label="Reference number" value={t.reference_number} />
-        <Field label="Payment date" value={date(t.completed_at || t.updated_at)} />
-        <Field label="Payment status" value={t.payment_status} />
+      <PaymentBreakdown payment={payment} showBeforeFinal />
+      <div className="grid payment-meta">
+        <Field label="Final Payment Method" value={t.payment_method} />
+        <Field label="Payment Reference" value={t.payment_ref || t.reference_number || 'Not provided'} />
+        <Field label="Payment Date" value={date(t.completed_at || t.updated_at)} />
+        <Field label="Payment Status" value="VERIFIED / PAID" />
       </div>
+      <PaymentVerified />
     </Section>,
     <Section title="Payment receipt">
       {t.receipt_image ? (
         <div className="receiptbox">
-          <p>✓ Receipt available</p>
+          <p>Payment Receipt · ✓ Customer receipt submitted</p>
           <img src={t.receipt_image} alt="Payment receipt" />
           <button onClick={() => setPreview(true)}>View Receipt</button>
         </div>
       ) : (
-        <p>No receipt uploaded.</p>
+        <p>No receipt uploaded for this transaction.</p>
       )}
     </Section>,
     <Section title="Transaction summary">
+      <PaymentBreakdown payment={payment} />
       <div className="grid">
         <Field label="Customer" value={t.full_name} />
         <Field label="Service" value={t.service_type} />
         <Field label="Appointment" value={`${date(t.schedule_date)} · ${t.appointment_time || 'Not provided'}`} />
-        <Field label="Amount paid" value={peso(t.price)} />
         <Field label="Payment method" value={t.payment_method} />
-        <Field label="Payment reference" value={t.payment_ref || t.reference_number} />
-        <Field label="Receipt" value={t.receipt_image ? 'Available' : 'Not uploaded'} />
-        <Field label="Payment status" value={t.payment_status} />
+        <Field label="Payment reference" value={t.payment_ref || t.reference_number || 'Not provided'} />
+        <Field label="Receipt" value={t.receipt_image ? 'Customer receipt submitted' : 'No receipt uploaded'} />
+        <Field label="Payment status" value="VERIFIED / PAID" />
       </div>
+      <PaymentVerified />
     </Section>
   ][step];
 
@@ -216,7 +241,7 @@ function Modal({ t, onClose }) {
         <header>
           <div>
             <p>Payment record</p>
-            <h1>{t.full_name || 'Customer'} <em>● Paid</em></h1>
+            <h1>{t.full_name || 'Customer'} <em>● VERIFIED</em></h1>
           </div>
           <button onClick={onClose}><X size={18} /></button>
         </header>
@@ -271,27 +296,29 @@ export default function PaymentHistory({ theme = 'dark' }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  const load = async () => {
+  const load = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setError(false);
-    const { data, error } = await supabase
-      .from('appointments')
-      .select('*')
-      .eq('payment_status', 'paid')
-      .order('completed_at', { ascending: false });
-
-    if (error) {
-      console.error(error);
-      setError(true);
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('payment_status', 'paid')
+        .order('completed_at', { ascending: false });
+      if (error) throw error;
       setRows(data || []);
+    } catch (loadError) {
+      console.error('Unable to load payment history.', loadError);
+      setError(true);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     load();
     const c = supabase.channel('realtime_payment_history')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments' }, () => load())
       .subscribe();
     return () => supabase.removeChannel(c);
   }, []);
@@ -304,14 +331,30 @@ export default function PaymentHistory({ theme = 'dark' }) {
         if (range === 'all') return true;
         const d = new Date(t.completed_at || t.updated_at || 0), now = new Date();
         if (range === 'today') return d.toDateString() === now.toDateString();
-        if (range === 'week') return d >= new Date(now - 6048e5);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        if (range === 'week') {
+          const weekStart = new Date(now);
+          weekStart.setDate(now.getDate() - now.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          return d >= weekStart && d <= now;
+        }
+        return d <= now && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       });
   }, [rows, term, method, range]);
+
+  const stats = useMemo(() => rows.reduce((summary, appointment) => {
+    const payment = getPaymentBreakdown(appointment);
+    return {
+      transactions: summary.transactions + 1,
+      serviceValue: summary.serviceValue + payment.total,
+      initialPayments: summary.initialPayments + payment.downpayment,
+      finalPayments: summary.finalPayments + payment.finalPayment
+    };
+  }, { transactions: 0, serviceValue: 0, initialPayments: 0, finalPayments: 0 }), [rows]);
 
   return (
     <div className={`page cashier-${theme}`}>
       <style>{css}</style>
+      <style>{`.history-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}.history-stat,.stat-skeleton{min-height:83px;padding:14px;border:1px solid ${C.border};border-radius:11px;background:${C.panel}}.history-stat{display:grid;align-content:space-between;gap:10px}.history-stat small{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:${C.muted}}.history-stat strong{font-size:19px;color:${C.gold};overflow-wrap:anywhere}.stat-skeleton,.card-skeleton{background:linear-gradient(100deg,${C.panel} 25%,#172332 48%,${C.panel} 72%);background-size:200% 100%;animation:history-shimmer 1.5s linear infinite}.payment-breakdown{display:grid;gap:0;margin:12px 0;padding:10px 12px;border-block:1px solid ${C.border};border-radius:8px;background:rgba(255,255,255,.018)}.payment-breakdown>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;color:${C.sub};font-size:11px}.payment-breakdown b{color:${C.text};font-size:12px;text-align:right}.payment-breakdown .final-payment{border-top:1px solid ${C.border};margin-top:2px;padding-top:11px;color:${C.gold};font-weight:700}.payment-breakdown .final-payment b{font-size:16px;color:${C.gold}}.payment-breakdown .total-paid{border-top:1px solid ${C.border};margin-top:3px;padding-top:11px}.payment-breakdown .total-paid b{color:${C.green}}.payment-breakdown .remaining-balance b{color:${C.gold}}.payment-meta{margin-top:14px}.payment-verified{display:flex;align-items:center;gap:11px;margin-top:15px;padding:12px 14px;border:1px solid rgba(16,185,129,.25);border-radius:10px;background:rgba(16,185,129,.07);color:${C.green}}.payment-verified>div{display:grid;gap:3px}.payment-verified b{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.payment-verified span{font-size:11px;color:${C.sub};line-height:1.45}.card header em{padding:5px 8px;border-radius:99px;background:rgba(16,185,129,.08)}.receipt-submitted{color:${C.green}!important}.receiptbox>p{color:${C.green};font-weight:700}.history-stats+.filters{padding-top:0}.error-state{display:grid;justify-items:center;gap:8px}.error-state b{color:#fda4af}.error-state span,.empty span{color:${C.muted};font-size:12px}.error-state button{margin-top:5px;padding:9px 17px;border:1px solid ${C.gold};border-radius:8px;background:${C.gold};color:${C.bg};font-weight:800;cursor:pointer}.card-skeleton{min-height:330px;padding:16px;border:1px solid ${C.border};border-radius:13px}.card-skeleton i{display:block;height:13px;margin:14px 0;border-radius:5px;background:rgba(255,255,255,.07)}.card-skeleton i:first-child{width:60%;height:24px}.card-skeleton i:last-child{width:100%;height:150px;margin-top:26px}.modal .payment-breakdown{margin:4px 0 16px;padding:10px 15px}.modal .payment-breakdown>div{font-size:12px;padding:10px 0}.modal .payment-breakdown b{font-size:13px}.modal .payment-breakdown .final-payment b,.modal .payment-breakdown .remaining-balance b{font-size:18px}.card>button:focus-visible,.filters button:focus-visible,.filters select:focus-visible,.error-state button:focus-visible,.modal button:focus-visible{outline:2px solid ${C.gold};outline-offset:2px}.cashier-light .history-stat,.cashier-light .stat-skeleton{background:#eef1f4;border-color:#cbd2da}.cashier-light .history-stat strong,.cashier-light .payment-breakdown b{color:#172033}.cashier-light .payment-breakdown .final-payment b,.cashier-light .payment-breakdown .remaining-balance b{color:#9a7100}.cashier-light .payment-verified{background:#dcfce7;border-color:#86efac}.cashier-light .payment-verified span{color:#334155}.cashier-light .payment-breakdown{background:rgba(15,23,42,.025)}@keyframes history-shimmer{to{background-position:-200% 0}}@media(max-width:860px){.history-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.history-stats{gap:8px}.history-stat{min-height:75px;padding:11px}.history-stat strong{font-size:16px}.payment-breakdown>div{align-items:flex-start;font-size:10px}.payment-breakdown b{font-size:11px}.modal .payment-breakdown{padding-inline:11px}.cards{grid-template-columns:1fr}}`}</style>
       <header>
         <div>
           <h1>Payment History</h1>
@@ -320,13 +363,21 @@ export default function PaymentHistory({ theme = 'dark' }) {
         </div>
         <div className="search">
           <Search size={16} />
-          <input value={term} onChange={e => setTerm(e.target.value)} placeholder="Search customer, service, or reference…" />
+          <input value={term} onChange={e => setTerm(e.target.value)} placeholder="Search customer, service, appointment, or reference…" />
         </div>
       </header>
+      <div className="history-stats">
+        {loading ? Array.from({ length: 4 }, (_, index) => <div className="stat-skeleton" key={index} />) : [
+          ['Completed Transactions', stats.transactions],
+          ['Total Service Value', peso(stats.serviceValue)],
+          ['Initial Payments', peso(stats.initialPayments)],
+          ['Final Payments', peso(stats.finalPayments)]
+        ].map(([label, value]) => <div className="history-stat" key={label}><small>{label}</small><strong>{value}</strong></div>)}
+      </div>
       <div className="filters">
-        {['all', 'cash', 'gcash', 'cod'].map(m => (
+        {['all', 'cash', 'gcash', 'bank', 'cod'].map(m => (
           <button className={method === m ? 'on' : ''} onClick={() => setMethod(m)} key={m}>
-            {m === 'all' ? 'All' : m === 'gcash' ? 'GCash' : m.toUpperCase()}
+            {m === 'all' ? 'All' : m === 'gcash' ? 'GCash' : m === 'bank' ? 'Bank' : m.toUpperCase()}
           </button>
         ))}
         <select value={range} onChange={e => setRange(e.target.value)}>
@@ -338,15 +389,15 @@ export default function PaymentHistory({ theme = 'dark' }) {
       </div>
       <h2>Transaction History <span>{list.length}</span></h2>
       {error ? (
-        <div className="empty">Payment history could not be loaded. Please try again.</div>
+        <div className="empty error-state"><b>Unable to load payment history.</b><span>Please try again.</span><button onClick={() => load(true)}>Retry</button></div>
       ) : loading ? (
-        <div className="empty">Loading completed payment transactions…</div>
+        <div className="cards"><div className="card-skeleton"><i/><i/><i/></div><div className="card-skeleton"><i/><i/><i/></div><div className="card-skeleton"><i/><i/><i/></div></div>
       ) : (
         <div className="cards">
           {list.length ? (
             list.map(t => <Card key={t.id} t={t} onOpen={setSelected} />)
           ) : (
-            <div className="empty">No transactions match your current search or filter.</div>
+            <div className="empty">{rows.length === 0 ? <><b>No completed payments yet</b><span>Verified customer payments will appear here after cashier verification.</span></> : <><b>No matching transactions</b><span>Try adjusting your search or filters.</span></>}</div>
           )}
         </div>
       )}
